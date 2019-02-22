@@ -1,7 +1,7 @@
 # decisionmaking_snep
 
 Comparison of two pyramidal neuron models during a decision-making task. 
-Uses brian2 to simulate spiking networks and snep framework for faster simulations.
+Uses [Brian2](https://brian2.readthedocs.io/en/stable/) to simulate spiking networks and [SNEP](git@gitlab.tubit.tu-berlin.de:mackwood/snep.git) to parallelize the simulations.
 
 References:
 - [Hierarchical network for perceptual decision making](https://www.nature.com/articles/ncomms7177)
