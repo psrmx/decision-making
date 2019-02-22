@@ -1,7 +1,7 @@
 # decisionmaking_snep
 
 Comparison of two pyramidal neuron models during a decision-making task. 
-Uses brian2 to simulate spiking networks and snep framework to run faster simulations.
+Uses brian2 to simulate spiking networks and snep framework for faster simulations.
 
 References:
 - Hierarchical decision making network from: https://www.nature.com/articles/ncomms7177
