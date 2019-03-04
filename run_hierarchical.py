@@ -23,7 +23,7 @@ def plot_fig1b(monitors, win, taskdir):
     from brian2tools import plot_raster, plot_rate
     sns.set(context='paper', style='darkgrid')
 
-    rateDE1, rateDE2, rateDI, spksDE, rateSE1, rateSE2, rateSI, spksSE, stim1, stim2, stimtime = monitors
+    spksSE, spksDE, rateDE1, rateDE2, rateDI, rateSE1, rateSE2, rateSI, stim1, stim2, stimtime = monitors
     subDE = int(spksDE.source.__len__() / 2)
     subSE = int(spksSE.source.__len__() / 2)
     nticks = 4
@@ -92,7 +92,6 @@ def plot_fig1b(monitors, win, taskdir):
     plt.title('Stimulus')
     plt.plot(stimtime, stim1.mean(axis=0)*1e12, color='C3', lw=1.5)   # stim1.t, axis=0
     plt.plot(stimtime, stim2.mean(axis=0)*1e12, color='C0', lw=1.5)   # np.arange(0, 3.5, 1e-3), axis=1
-    #plt.plot(statSI.I.mean(axis=0), color='C4', lw=1)
     plt.xlabel("time (s)")
     plt.ylabel("current (pA)")
     #plt.xlim(0, 5)
@@ -117,8 +116,8 @@ def run_hierarchical(task_info, taskdir, tempdir):
 
     # simulation parameters
     sim_dt = task_info['sim']['sim_dt']
-    runtime = unitless(task_info['sim']['runtime'], sim_dt)
-    # settle_time = unitless(task_info['sim']['settle_time'], sim_dt)
+    runtime = task_info['sim']['runtime']
+    settle_time = unitless(task_info['sim']['settle_time'], sim_dt)
     smooth_win = task_info['sim']['smooth_win']
 
     # parallel code and flag to start
@@ -131,6 +130,7 @@ def run_hierarchical(task_info, taskdir, tempdir):
     # set specific seed to test the same network, this way we also have the same synapses!
     start_scope()
     seed(task_info['sim']['seed_con'])
+    print('Creating network...')
 
     # decision circuit
     dec_groups, dec_synapses, dec_subgroups = cir.mk_dec_circuit(task_info)
@@ -152,21 +152,20 @@ def run_hierarchical(task_info, taskdir, tempdir):
     dec_groups, sen_groups = cir.set_init_conds(task_info, dec_groups, sen_groups)
 
     # create monitors
-    monitors = cir.mk_monitors(task_info, dec_subgroups, sen_groups, dec_groups, sen_groups)
+    monitors = cir.mk_monitors(task_info, dec_subgroups, sen_subgroups, dec_groups, sen_groups)
 
     # run hierarchical net
-    print('Creating network...')
     net = Network(dec_groups.values(), dec_synapses.values(),
                   sen_groups.values(), sen_synapses.values(),
-                  fffb_synapses.values(), monitors.values(), name='hierarchicalnet')
-    print('Running network...')
+                  fffb_synapses.values(), *monitors, name='hierarchicalnet')
+    print('Running simulation...')
     net.run(runtime, report='stdout', profile=True)
     print(profiling_summary(net=net, show=10))
 
     # nice plots on cluster
-    if task_info['sim']['pltfig1']:
-        monitors2plot = monitors.append(stim1, stim2, stim_time)
-        plot_fig1b(monitors2plot, smooth_win, taskdir)
+    if task_info['sim']['plt_fig1']:
+        mon2plt = monitors.copy() + [stim1, stim2, stim_time]
+        plot_fig1b(mon2plt, smooth_win, taskdir)
 
     # -------------------------------------
     # Burst analysis
@@ -236,11 +235,11 @@ class JobInfoExperiment(Experiment):
 
             'sim': {
                 'sim_dt': Parameter(0.1, 'ms'),
-                'runtime': Parameter(1, 'second'),
-                'settle_time': Parameter(0, 'second'),
-                'stim_on': Parameter(0, 'second'),
-                'stim_off': Parameter(1, 'second'),
                 'stim_dt': Parameter(1, 'ms'),
+                'runtime': Parameter(3.0, 'second'),
+                'settle_time': Parameter(0, 'second'),
+                'stim_on': Parameter(0.5, 'second'),
+                'stim_off': Parameter(2.5, 'second'),
                 'replicate_stim': False,
                 'num_method': 'euler',
                 'seed_con': Parameter(1284),
@@ -275,6 +274,7 @@ class JobInfoExperiment(Experiment):
 
 if __name__ == '__main__':
     from snep.parallel2 import run
+
     """
         IMPORTANT: Only include code here that can be run repeatedly,
         because this will be run once in the parent process, and then
@@ -285,5 +285,4 @@ if __name__ == '__main__':
     job_info = run(JobInfoExperiment, ji_kwargs, username=username, max_tasks=max_tasks, mem_per_task=mem_per_task,
                    max_task_time=max_task_time, poll_interval=poll_interval,
                    result_dir='Documents/WS19/MasterThesis/Experiments',
-                   additional_files=['circuits.py', 'helper_funcs.py', 'burst_analysis.py',
-                                     'get_params.py', 'neuron_models.py'])
+                   additional_files=['circuits.py', 'helper_funcs.py', 'burst_analysis.py', 'get_params.py', 'neuron_models.py'])
