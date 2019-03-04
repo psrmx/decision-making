@@ -205,3 +205,37 @@ def spks2neurometrictimes(spktimes, dt, runtime, validburst=16e-3):
             sngltimes[n] = thisspks[issingle.astype(bool)]
 
     return evnttimes, brsttimes, sngltimes, spktimes
+
+
+
+# def calculate_bursts(task_info):
+#     dt = spksSE.clock.dt
+#     validburst = task_info['sen']['2c']['validburst']
+#     smooth_win_ = smooth_win / second
+#
+#     if task_info['sim']['burstanalysis']:
+#
+#         if task_info['sim']['2c_model']:
+#             last_muOUd = np.array(dend_mon.muOUd[:, -int(1e3):].mean(axis=1))
+#
+#         if task_info['sim']['plasticdend']:
+#             # calculate neurometric info per population
+#             events, bursts, singles, spikes, isis = spks2neurometric(spksSE, runtime, settle_time, validburst,
+#                                                                      smooth_win=smooth_win_, raster=False)
+#
+#             # plot & save weigths after convergence
+#             eta0 = task_info['sen']['2c']['eta0']
+#             tauB = task_info['sen']['2c']['tauB']
+#             targetB = task_info['targetB']
+#             B0 = tauB * targetB
+#             tau_update = task_info['sen']['2c']['tau_update']
+#             eta = eta0 * tau_update / tauB
+#             plot_weights(dend_mon, events, bursts, spikes, [targetB, B0, eta, tauB, tau_update, smooth_win_], taskdir)
+#             plot_rasters(spksSE, bursts, targetB, isis, runtime_, taskdir)
+#         else:
+#             # calculate neurometric per neuron
+#             events, bursts, singles, spikes, isis = spks2neurometric(spksSE, runtime, settle_time, validburst,
+#                                                                      smooth_win=smooth_win_, raster=True)
+#             plot_neurometric(events, bursts, spikes, stim1, stim2, stimtime,
+#                              (settle_time_, runtime_), taskdir, smooth_win_)
+#             plot_isis(isis, bursts, events, (settle_time_, runtime_), taskdir)

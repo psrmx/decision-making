@@ -11,6 +11,28 @@ load_path = '~/Documents/WS19/MasterThesis/Experiments/run_hierarchical'
 
 
 # helper functions
+# def who_wins(task_dir):
+#     originaltime = rateDE1.t / second
+#     interptime = np.linspace(0, originaltime[-1], originaltime[-1] * 100)  # every 10 ms
+#     fDE1 = interpolate.interp1d(originaltime, rateDE1.smooth_rate(window='flat', width=smooth_win))
+#     fDE2 = interpolate.interp1d(originaltime, rateDE2.smooth_rate(window='flat', width=smooth_win))
+#     fSE1 = interpolate.interp1d(originaltime, rateSE1.smooth_rate(window='flat', width=smooth_win))
+#     fSE2 = interpolate.interp1d(originaltime, rateSE2.smooth_rate(window='flat', width=smooth_win))
+#     rateDE = np.array([f(interptime) for f in [fDE1, fDE2]])
+#     rateSE = np.array([f(interptime) for f in [fSE1, fSE2]])
+#
+#     # select the last half second of the stimulus
+#     newdt = runtime_ / rateDE.shape[1]
+#     settle_timeidx = int(settle_time_ / newdt)
+#     dec_ival = np.array([(stim_off_ - 0.5) / newdt, stim_off_ / newdt], dtype=int)
+#     who_wins = rateDE[:, dec_ival[0]:dec_ival[1]].mean(axis=1)
+#
+#     # divide trls into preferred and non-preferred
+#     pref_msk = np.argmax(who_wins)
+#     poprates_dec = np.array([rateDE[pref_msk], rateDE[~pref_msk]])  # 0: pref, 1: npref
+#     poprates_sen = np.array([rateSE[pref_msk], rateSE[~pref_msk]])
+
+
 def get_actn(rates, sub, nselect=100):
     """
     :param rates: 3d array containing the rates of a sensory neurons, shape (ntrls, neurons, time)
@@ -309,15 +331,15 @@ def plot_fig2(tables_task_ids):
     thisanalysisname = '/CPs-' + str(ntrls) + 'trls-' + str(targets) + '.pkl'
 
     # save variables
-    with open(savepath + thisexperiment + thisanalysisname, 'wb') as f:
-        pickle.dump([pref_msk,
-                     actn,
-                     auc12,
-                     [corrsall, corrsii, corrsij]], f)
+    # with open(savepath + thisexperiment + thisanalysisname, 'wb') as f:
+    #     pickle.dump([pref_msk,
+    #                  actn,
+    #                  auc12,
+    #                  [corrsall, corrsii, corrsij]], f)
 
     # TODO: plot burst probability and coherence levels
     # TODO: plot accuracy!
 
-if __name__ == '__main__':
-    plot_fig2()
-    # explore_data()
+# if __name__ == '__main__':
+#     plot_fig2()
+#     # explore_data()
