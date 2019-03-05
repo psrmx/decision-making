@@ -24,9 +24,9 @@ eqs_wimmer_inh = '''
 
 eqs_naud_soma = '''
     dV/dt = (-g_ea*(V-VrevE) -g_i*(V-VrevIsd) -(V-Vl))/tau + (gCas/(1+exp(-(V_d/mV + 38)/6)) + w_s + I)/Cm : volt (unless refractory)
-    dg_ea/dt = (-g_ea + x_ea) / tau_ampa_d  : 1
+    dg_ea/dt = (-g_ea + x_ea) / tau_d       : 1
     dx_ea/dt = -x_ea / tau_r                : 1
-    dg_i/dt = (-g_i + x_i) / tau_gaba_d     : 1
+    dg_i/dt = (-g_i + x_i) / tau_d          : 1
     dx_i/dt = -x_i / tau_r                  : 1
     dw_s/dt = -w_s / tau_ws                 : amp
     tau = taus          : second
@@ -37,7 +37,7 @@ eqs_naud_soma = '''
 
 eqs_naud_dend = '''
     dV_d/dt = (-g_ea*(V_d-VrevE) -(V_d-Vl))/tau + (gCad/(1+exp(-(V_d/mV + 38)/6)) + w_d + K + Ibg)/Cm : volt
-    dg_ea/dt = (-g_ea + x_ea) / tau_ampa_d  : 1
+    dg_ea/dt = (-g_ea + x_ea) / tau_d       : 1
     dx_ea/dt = -x_ea / tau_r                : 1
     dw_d/dt = (-w_d + awd * (V_d - Vl)) / tau_wd                        : amp
     dIbg/dt = (muOUd - Ibg) / tauOU + (sigmaOU * xi) / sqrt(tauOU / 2)  : amp
@@ -52,6 +52,14 @@ eqs_plasticity = '''
     dB/dt = -B / tauB                               : 1
     dburst_start/dt = -burst_start / tau_burst      : 1 (unless refractory)
     dburst_stop/dt = -burst_stop / tau_burst        : 1
+    muOUd                                           : amp
+'''
+
+eqs_plasticity_linked = '''
+    B               : 1 (linked)
+    burst_start     : 1 (linked)
+    burst_stop      : 1 (linked)
+    muOUd           : 1 (linked)
 '''
 
 # Decision neurons
@@ -80,4 +88,4 @@ eqs_NMDA = '''
         g_ent_post = w_nmda * g_en_pre      : 1 (summed)
         w_nmda  : 1 (constant)
         w       : 1 (constant)
-        '''
+'''

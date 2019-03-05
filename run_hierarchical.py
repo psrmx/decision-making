@@ -1,9 +1,9 @@
+# imports and no pop-up figure from plots
+import os
+import numpy as np
 import matplotlib as mlp
 mlp.use('agg')
 
-import os
-import numpy as np
-import circuits as cir
 from snep.configuration import config
 from snep.experiment import Experiment
 
@@ -110,6 +110,7 @@ def run_hierarchical(task_info, taskdir, tempdir):
     print(taskdir)
 
     # specific imports
+    import circuits as cir
     from brian2 import set_device, defaultclock, seed, Network, profiling_summary
     from brian2.core.magic import start_scope
     from helper_funcs import unitless
@@ -246,23 +247,14 @@ class JobInfoExperiment(Experiment):
                 'smooth_win': Parameter(100, 'ms'),
                 '2c_model': True,
                 'plt_fig1': True,
-                'plastic_dend': False,            # needs to be run with pltfig1 True and 2c_model True!
-                'burst_analysis': False},
-
-            'plastic': {
-                # 'targetB': Parameter(2, 'Hz'),
-                'tauB': Parameter(50000, 'ms'),
-                'tau_update': Parameter(10, 'ms'),
-                'eta0': Parameter(5, 'pA'),
-                'validburst': Parameter(16e-3),  # in seconds
-                'min_burst_stop': Parameter(0.1)}}
+                'burst_analysis': False,
+                'validburst': Parameter(16e-3)}}
 
         param_ranges = {
             'c': ParameterArray(np.array([0])),
             'bfb': ParameterArray(np.array([0])),                   # np.arange(0, 7)
-            'targetB': ParameterArray(np.array([2]), 'Hz'),         # np.arange(1.5, 4.5, 0.5)
-            # 'iter': ParameterArray(np.arange(0, 4)),
-        }
+            # 'iter': ParameterArray(np.arange(0, 4))
+            }
 
         # add params to tables
         self.tables.add_parameters(param_fixed)
@@ -274,12 +266,11 @@ class JobInfoExperiment(Experiment):
 
 if __name__ == '__main__':
     from snep.parallel2 import run
-
     """
         IMPORTANT: Only include code here that can be run repeatedly,
         because this will be run once in the parent process, and then
         once for every worker process.
-        """
+    """
     # path.expanduser() may differ from result_dir
     ji_kwargs = dict(root_dir=os.path.expanduser('~/Documents/WS19/MasterThesis/Experiments'))
     job_info = run(JobInfoExperiment, ji_kwargs, username=username, max_tasks=max_tasks, mem_per_task=mem_per_task,

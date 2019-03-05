@@ -143,10 +143,10 @@ def mk_sen_circuit(task_info):
     twoComp_model = task_info['sim']['2c_model']
 
     # define namespace
-    if not twoComp_model:
-        paramsen = params.get_sen_params(task_info)
-    else:
+    if twoComp_model:
         paramsen = params.get_2c_params(task_info)
+    else:
+        paramsen = params.get_sen_params(task_info)
 
     # unpack delays
     dE = paramsen['dE']
@@ -157,12 +157,7 @@ def mk_sen_circuit(task_info):
     # Set up the model
     # -------------------------------------
     # neuron groups
-    if not twoComp_model:
-        senE = NeuronGroup(N_E, model=nm.eqs_wimmer_exc, method=num_method, threshold='V>=Vt', reset='V=Vr',
-                           refractory='tau_refE', namespace=paramsen, name='senE')
-        senE1 = senE[:N_E1]
-        senE2 = senE[N_E1:]
-    else:
+    if twoComp_model:
         senE = NeuronGroup(N_E, model=nm.eqs_naud_soma, method=num_method, threshold='V>=Vt',
                            reset='''V = Vl
                                     w_s += bws''',
@@ -174,6 +169,11 @@ def mk_sen_circuit(task_info):
         senE2 = senE[N_E1:]
         dend1 = dend[:N_E1]
         dend2 = dend[N_E1:]
+    else:
+        senE = NeuronGroup(N_E, model=nm.eqs_wimmer_exc, method=num_method, threshold='V>=Vt', reset='V=Vr',
+                           refractory='tau_refE', namespace=paramsen, name='senE')
+        senE1 = senE[:N_E1]
+        senE2 = senE[N_E1:]
 
     senI = NeuronGroup(N_I, model=nm.eqs_wimmer_inh, method=num_method, threshold='V>=Vt', reset='V=Vr',
                        refractory='tau_refI', namespace=paramsen, name='senI')
@@ -245,7 +245,7 @@ def mk_sen_circuit(task_info):
     # variables to return
     synapses = {'synSESE': synSESE, 'synSESI': synSESI,
                 'synSISE': synSISE, 'synSISI': synSISI,
-                'synSXSI': synSXSI, 'synSXSE': synSXSE}
+                'synSXSE': synSXSE, 'synSXSI': synSXSI}
     if not twoComp_model:
         groups = {'SE': senE, 'SI': senI, 'SX': extS}
         subgroups = {'SE1': senE1, 'SE2': senE2}
@@ -254,54 +254,6 @@ def mk_sen_circuit(task_info):
         subgroups = {'SE1': senE1, 'SE2': senE2, 'dend1': dend1, 'dend2': dend2}
 
     return groups, synapses, subgroups
-
-
-def mk_fffb_synapses(task_info, dec_subgroups, sen_subgroups):
-    """
-    Feedforward and feedback synapses from sensory to integration.
-
-    :return: dictionary with two synapse objects
-    """
-    # params
-    paramfffb = params.get_fffb_params(task_info)
-    d = paramfffb['d']
-    num_method = task_info['sim']['num_method']
-    twoComp_model = task_info['sim']['2c_model']
-
-    # unpack subgroups
-    decE1 = dec_subgroups['DE1']
-    decE2 = dec_subgroups['DE2']
-    senE1 = sen_subgroups['SE1']
-    senE2 = sen_subgroups['SE2']
-    if not twoComp_model:
-        fb_target1 = senE1
-        fb_target2 = senE2
-    else:
-        dend1 = sen_subgroups['dend1']
-        dend2 = sen_subgroups['dend2']
-        fb_target1 = dend1
-        fb_target2 = dend2
-
-    # create feedforward synapses
-    synSE1DE1 = Synapses(senE1, decE1, model='w = w_ff : 1', method=num_method,
-                         on_pre='g_ea += w', delay=d, name='synSE1DE1', namespace=paramfffb)
-    synSE2DE2 = Synapses(senE2, decE2, model='w = w_ff : 1', method=num_method,
-                         on_pre='g_ea += w', delay=d, name='synSE2DE2', namespace=paramfffb)
-
-    # create feedback synapses
-    synDE1SE1 = Synapses(decE1, fb_target1, model='w = w_fb : 1', method=num_method,
-                         on_pre='x_ea += w', delay=d, name='synDE1SE1', namespace=paramfffb)
-    synDE2SE2 = Synapses(decE2, fb_target2, model='w = w_fb : 1', method=num_method,
-                         on_pre='x_ea += w', delay=d, name='synDE2SE2', namespace=paramfffb)
-
-    # connect synapses
-    for syn in [synSE1DE1, synSE2DE2, synDE1SE1, synDE2SE2]:
-        syn.connect(p='eps')
-
-    fffb_synapses = {'synSE1DE1': synSE1DE1, 'synSE2DE2': synSE2DE2,
-                     'synDE1SE1': synDE1SE1, 'synDE2SE2': synDE2SE2}
-
-    return fffb_synapses
 
 
 def mk_sen_stimulus(task_info, arrays=False):
@@ -319,7 +271,6 @@ def mk_sen_stimulus(task_info, arrays=False):
         np.random.seed()
 
     # simulation params
-    c = task_info['c']  # stim coherence (between 0 and 1)
     nn = int(task_info['sen']['N_E'] * task_info['sen']['sub'])     # no. of neurons in sub-pop1
     stim_dt = task_info['sim']['stim_dt']
     runtime = unitless(task_info['sim']['runtime'], stim_dt)
@@ -330,6 +281,7 @@ def mk_sen_stimulus(task_info, arrays=False):
     # stimulus namespace
     paramstim = params.get_stim_params(task_info)
     tau = unitless(paramstim['tau_stim'], stim_dt)      # OU time constant
+    c = paramstim['c']
     I0 = paramstim['I0']
     mu1 = paramstim['mu1']
     mu2 = paramstim['mu2']
@@ -360,6 +312,79 @@ def mk_sen_stimulus(task_info, arrays=False):
     return Irec
 
 
+def mk_fffb_synapses(task_info, dec_subgroups, sen_subgroups):
+    """
+    Feedforward and feedback synapses of hierarchical network.
+
+    :return: dictionary with two synapse objects
+    """
+    # params
+    paramfffb = params.get_fffb_params(task_info)
+    d = paramfffb['d']
+    num_method = task_info['sim']['num_method']
+    twoComp_model = task_info['sim']['2c_model']
+
+    # unpack subgroups
+    decE1 = dec_subgroups['DE1']
+    decE2 = dec_subgroups['DE2']
+    senE1 = sen_subgroups['SE1']
+    senE2 = sen_subgroups['SE2']
+    if not twoComp_model:
+        fb_target1 = senE1
+        fb_target2 = senE2
+    else:
+        fb_target1 = sen_subgroups['dend1']
+        fb_target2 = sen_subgroups['dend2']
+
+    # create feedforward synapses
+    synSE1DE1 = Synapses(senE1, decE1, model='w = w_ff : 1', method=num_method,
+                         on_pre='g_ea += w', delay=d, name='synSE1DE1', namespace=paramfffb)
+    synSE2DE2 = Synapses(senE2, decE2, model='w = w_ff : 1', method=num_method,
+                         on_pre='g_ea += w', delay=d, name='synSE2DE2', namespace=paramfffb)
+
+    # create feedback synapses
+    synDE1SE1 = Synapses(decE1, fb_target1, model='w = w_fb : 1', method=num_method,
+                         on_pre='x_ea += w', delay=d, name='synDE1SE1', namespace=paramfffb)
+    synDE2SE2 = Synapses(decE2, fb_target2, model='w = w_fb : 1', method=num_method,
+                         on_pre='x_ea += w', delay=d, name='synDE2SE2', namespace=paramfffb)
+
+    # connect synapses
+    for syn in [synSE1DE1, synSE2DE2, synDE1SE1, synDE2SE2]:
+        syn.connect(p='eps')
+
+    fffb_synapses = {'synSE1DE1': synSE1DE1, 'synSE2DE2': synSE2DE2,
+                     'synDE1SE1': synDE1SE1, 'synDE2SE2': synDE2SE2}
+
+    return fffb_synapses
+
+
+def mk_poisson_fb(task_info, dend):
+    """
+    Feedback synapses from poisson mimicking decision circuit, to sensory.
+
+    :return: dictionary with a poisson group and a synapse object
+    """
+    # params
+    paramfffb = params.get_fffb_params(task_info)
+    d = paramfffb['d']
+    num_method = task_info['sim']['num_method']
+
+    # Poisson group
+    N_E = task_info['sen']['N_E']           # number of exc neurons (1600)
+    subDE = task_info['dec']['sub']         # stim-selective fraction in decision exc neurons
+    N_DX = int(subDE * N_E)                 # number decision mock neurons
+    rateDE = task_info['dec']['rate']
+    XDE = PoissonGroup(N_DX, rates=rateDE)
+
+    # fb synapse
+    synXDEdend = Synapses(XDE, dend, model='w = w_fb : 1', method=num_method, delay=d,
+                          on_pre='x_ea += w',
+                          namespace=paramfffb, name='synXDEdend')
+    synXDEdend.connect(p='eps')
+
+    return XDE, synXDEdend
+
+
 def set_init_conds(task_info, dec_groups, sen_groups):
     """
     Set the adequate initial conditions for the simulation.
@@ -374,8 +399,8 @@ def set_init_conds(task_info, dec_groups, sen_groups):
                 dec_group.V = '-52*mV + 2*mV*rand()'
                 dec_group.g_ea = '0.05 * (1 + 0.2*rand())'
             except AttributeError:
-                # ignore external population
                 pass
+
     for sen_group in sen_groups.values():
         try:
             sen_group.V = '-52*mV + 2*mV * rand()'
@@ -385,9 +410,12 @@ def set_init_conds(task_info, dec_groups, sen_groups):
 
     if task_info['sim']['2c_model']:
         last_muOUd = np.loadtxt('last_muOUd.csv')
-        sen_groups['dend'].g_ea = '0.05 * (1 + 0.2*rand())'
-        sen_groups['dend'].V_d = '-72*mV + 2*mV*rand()'
-        sen_groups['dend'].muOUd = np.tile(last_muOUd, 2) * amp
+        try:
+            sen_groups['dend'].g_ea = '0.05 * (1 + 0.2*rand())'
+            sen_groups['dend'].V_d = '-72*mV + 2*mV*rand()'
+            sen_groups['dend'].muOUd = np.tile(last_muOUd, 2) * amp
+        except AttributeError:
+            pass
 
     return dec_groups, sen_groups
 
@@ -417,6 +445,8 @@ def mk_monitors(task_info, dec_subgroups, sen_subgroups, dec_groups, sen_groups)
     rateSE1 = PopulationRateMonitor(senE1)
     rateSE2 = PopulationRateMonitor(senE2)
 
+    monitors = [spksSE, rateDE1, rateDE2, rateSE1, rateSE2]
+
     if task_info['sim']['plt_fig1']:
         # spk monitors
         spksSE = SpikeMonitor(senE)
@@ -425,8 +455,7 @@ def mk_monitors(task_info, dec_subgroups, sen_subgroups, dec_groups, sen_groups)
         spksDE = SpikeMonitor(decE[:nnDE])
         rateDI = PopulationRateMonitor(dec_groups['DI'])
         rateSI = PopulationRateMonitor(sen_groups['SI'])
+        monitors = [spksSE, spksDE, rateDE1, rateDE2, rateDI, rateSE1, rateSE2, rateSI]
 
-        return [spksSE, spksDE, rateDE1, rateDE2, rateDI, rateSE1, rateSE2, rateSI]
-
-    return [spksSE, rateDE1, rateDE2, rateSE1, rateSE2]
+    return monitors
 

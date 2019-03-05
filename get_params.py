@@ -9,7 +9,6 @@ def get_sen_params(task_info):
     :return: a dictionary, the namespace over which the circuit will operate
     """
     # local recurrent connections
-    sub = task_info['sen']['sub']
     eps = 0.2               # connection probability for EE, EI, IE and II
     w_p = 1.3               # synaptic strength of synapses within pop E1 and E2, w_m = 2 - w_p
     w_m = 2 - w_p           # relative synaptic strength across pop E1 and E2
@@ -68,7 +67,7 @@ def get_2c_params(task_info):
     tauws = 100*ms          # timescale of recovery ("slow") variable
     bws = -200*pA           # strength of spike-triggered facilitation (bws < 0)
     gCas = 1300*pA          # strength of forward calcium spike propagation
-    tau_refE = 3*ms         # refractory period !!!!
+    tau_refE = 3*ms         # refractory period is 1*ms longer
 
     # dendrite
     Cmd = 170*pF
@@ -83,22 +82,18 @@ def get_2c_params(task_info):
 
     # external/background noise
     muOUs = 70*pA           # drift of OU for soma
-    muOUd = -270*pA         # drift of OU for dendrites
     sigmaOU = 450*pA        # diffusion of OU process
     tauOU = 2*ms            # timescale of OU process
 
     # synapse models
     VrevIsd = -70*mV        # rev potential for I synapses in soma, dend
-    tau_ampa_d = 1*ms       # decay constants of AMPA conductance
-    tau_gaba_d = 5*ms       # decay constants of GABA conductance
 
     # previous sensory namespace
     param_wimmer = get_sen_params(task_info)
     param_naud = {'gleakE': gleakEs, 'gleakEd': gleakEd, 'Cms': Cms, 'Cmd': Cmd, 'VrevIsd': VrevIsd,
-                  'taus': taus, 'taud': taud, 'tau_refE': tau_refE, 'tau_ampa_d': tau_ampa_d,
-                  'tau_gaba_d': tau_gaba_d, 'tau_ws': tauws, 'tau_wd': tauwd,
+                  'taus': taus, 'taud': taud, 'tau_refE': tau_refE, 'tau_ws': tauws, 'tau_wd': tauwd,
                   'bws': bws, 'awd': awd, 'gCas': gCas, 'gCad': gCad, 'bpA': bpA, 'k1': k1, 'k2': k2,
-                  'muOUs': muOUs, 'muOUd': muOUd, 'tauOU': tauOU, 'sigmaOU': sigmaOU}
+                  'muOUs': muOUs, 'tauOU': tauOU, 'sigmaOU': sigmaOU}
 
     # merge dictionaries, order matters because previous variables get updated
     paramsen = {**param_wimmer, **param_naud}
@@ -171,6 +166,10 @@ def get_stim_params(task_info):
     :return: a dictionary with the selected parameters
     """
     # params
+    try:
+        c = task_info['c']      # stim coherence (between 0 and 1)
+    except KeyError:
+        c = 0
     I0 = 80 * pA                # mean input current for zero-coherence stim
     mu1 = 0.25                  # av. additional input current to pop1 at highest coherence
     mu2 = -0.25                 # av. additional input current to pop2 at highest coherence
@@ -185,7 +184,7 @@ def get_stim_params(task_info):
         paramsen = get_2c_params(task_info)
         I0 = adjust_variable(I0, paramsen['CmE'], paramsen['Cms'])
 
-    paramstim = {'I0': I0, 'mu1': mu1, 'mu2': mu2,  'tau_stim': tau_stim,
+    paramstim = {'c': c, 'I0': I0, 'mu1': mu1, 'mu2': mu2,  'tau_stim': tau_stim,
                  'stim_dt': stim_dt, 'sigma_stim': sigma_stim, 'sigma_ind': sigma_ind}
 
     return paramstim
@@ -201,11 +200,16 @@ def get_fffb_params(task_info):
     eps = 0.2                   # connection probability
     d = 1 * ms                  # transmission delays of E synapses
     w_ff = 0.0036               # weight of ff synapses, 0.09 nS when scaled by gleakE of dec_circuit
-    w_fb = 0.004                # weight of fb synapses, 0.0668 nS when scaled by gleakE of sen_circuit
+    w_fb = 0.004                # weight of fb synapses, 0.0668 nS when scaled by gleakE of sen_circuit_wimmer
     b_fb = task_info['bfb']     # feedback strength, between 0 and 6
 
     paramfffb = {'eps': eps, 'd': d, 'w_ff': w_ff, 'w_fb': w_fb*b_fb}
 
     return paramfffb
+
+
+def get_burst_params(task_info):
+    # 'validburst': Parameter(16e-3)
+    pass
 
 
