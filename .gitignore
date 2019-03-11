@@ -1,4 +1,6 @@
-ompiled source #
+
+43 lines (38 sloc) 487 Bytes
+# Compiled source #
 ###################
 *.com
 *.class
@@ -40,3 +42,4 @@ Thumbs.db
 ###########
 .idea
 __pycache__
+
