@@ -111,6 +111,7 @@ def run_hierarchical(task_info, taskdir, tempdir):
 
     # specific imports
     import circuits as cir
+    import networks as nets
     from brian2 import set_device, defaultclock, seed, Network, profiling_summary
     from brian2.core.magic import start_scope
     from helper_funcs import unitless
@@ -125,40 +126,17 @@ def run_hierarchical(task_info, taskdir, tempdir):
     set_device('cpp_standalone', directory=tempdir)
     defaultclock.dt = sim_dt
 
-    # -------------------------------------
-    # Construct hierarchical network
-    # -------------------------------------
     # set specific seed to test the same network, this way we also have the same synapses!
     start_scope()
     seed(task_info['sim']['seed_con'])
     print('Creating network...')
 
-    # decision circuit
-    dec_groups, dec_synapses, dec_subgroups = cir.mk_dec_circuit(task_info)
-
-    # sensory circuit
-    sen_groups, sen_synapses, sen_subgroups = cir.mk_sen_circuit(task_info)
-
-    # ff and fb synapses
-    fffb_synapses = cir.mk_fffb_synapses(task_info, dec_subgroups, sen_subgroups)
+    # hierarchical network
+    net, monitors = nets.get_hierarchical_net(task_info)
 
     # generate stimulus
     Irec, stim1, stim2, stim_time = cir.mk_sen_stimulus(task_info, arrays=True)
 
-    # -------------------------------------
-    # Prepare simulation and run
-    # -------------------------------------
-    # initial conditions
-    seed()
-    dec_groups, sen_groups = cir.set_init_conds(task_info, dec_groups, sen_groups)
-
-    # create monitors
-    monitors = cir.mk_monitors(task_info, dec_subgroups, sen_subgroups, dec_groups, sen_groups)
-
-    # run hierarchical net
-    net = Network(dec_groups.values(), dec_synapses.values(),
-                  sen_groups.values(), sen_synapses.values(),
-                  fffb_synapses.values(), *monitors, name='hierarchicalnet')
     print('Running simulation...')
     net.run(runtime, report='stdout', profile=True)
     print(profiling_summary(net=net, show=10))
@@ -252,7 +230,7 @@ class JobInfoExperiment(Experiment):
 
         param_ranges = {
             'c': ParameterArray(np.array([0])),
-            'bfb': ParameterArray(np.array([0])),                   # np.arange(0, 7)
+            'bfb': ParameterArray(np.array([0])),
             # 'iter': ParameterArray(np.arange(0, 4))
             }
 
