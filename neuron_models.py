@@ -52,14 +52,13 @@ eqs_plasticity = '''
     dB/dt = -B / tauB                               : 1
     dburst_start/dt = -burst_start / tau_burst      : 1 (unless refractory)
     dburst_stop/dt = -burst_stop / tau_burst        : 1
-    muOUd                                           : amp
 '''
 
 eqs_plasticity_linked = '''
+    muOUd           : amp (linked)
     B               : 1 (linked)
     burst_start     : 1 (linked)
     burst_stop      : 1 (linked)
-    muOUd           : 1 (linked)
 '''
 
 # Decision neurons

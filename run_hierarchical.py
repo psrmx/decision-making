@@ -111,7 +111,6 @@ def run_hierarchical(task_info, taskdir, tempdir):
 
     # specific imports
     import circuits as cir
-    import networks as nets
     from brian2 import set_device, defaultclock, seed, Network, profiling_summary
     from brian2.core.magic import start_scope
     from helper_funcs import unitless
@@ -126,13 +125,15 @@ def run_hierarchical(task_info, taskdir, tempdir):
     set_device('cpp_standalone', directory=tempdir)
     defaultclock.dt = sim_dt
 
-    # set specific seed to test the same network, this way we also have the same synapses!
+    # seed to get same network with same synapses
     start_scope()
     seed(task_info['sim']['seed_con'])
     print('Creating network...')
 
-    # hierarchical network
-    net, monitors = nets.get_hierarchical_net(task_info)
+    if task_info['sim']['plasticity']:
+        net, monitors = cir.get_plasticity_net(task_info)
+    else:
+        net, monitors = cir.get_hierarchical_net(task_info)
 
     # generate stimulus
     Irec, stim1, stim2, stim_time = cir.mk_sen_stimulus(task_info, arrays=True)
@@ -146,14 +147,15 @@ def run_hierarchical(task_info, taskdir, tempdir):
         mon2plt = monitors.copy() + [stim1, stim2, stim_time]
         plot_fig1b(mon2plt, smooth_win, taskdir)
 
-    # -------------------------------------
     # Burst analysis
-    # -------------------------------------
     events = np.zeros(1)
     bursts = np.zeros(1)
     singles = np.zeros(1)
     spikes = np.zeros(1)
     last_muOUd = np.zeros(1)
+
+    if task_info['sim']['burst_analysis']:
+        pass
 
     # neurometric params
 
@@ -215,22 +217,32 @@ class JobInfoExperiment(Experiment):
             'sim': {
                 'sim_dt': Parameter(0.1, 'ms'),
                 'stim_dt': Parameter(1, 'ms'),
-                'runtime': Parameter(3.0, 'second'),
+                'runtime': Parameter(5, 'second'),
                 'settle_time': Parameter(0, 'second'),
-                'stim_on': Parameter(0.5, 'second'),
-                'stim_off': Parameter(2.5, 'second'),
+                'stim_on': Parameter(0, 'second'),
+                'stim_off': Parameter(5, 'second'),
                 'replicate_stim': False,
                 'num_method': 'euler',
                 'seed_con': Parameter(1284),
                 'smooth_win': Parameter(100, 'ms'),
                 '2c_model': True,
-                'plt_fig1': True,
+                'plt_fig1': False,
                 'burst_analysis': False,
-                'validburst': Parameter(16e-3)}}
+                'plasticity': True},
+
+            'plastic': {
+                # 'targetB': Parameter(2, 'Hz'),
+                'tauB': Parameter(50000, 'ms'),
+                'tau_update': Parameter(10, 'ms'),
+                'eta0': Parameter(5, 'pA'),
+                'valid_burst': Parameter(16e-3),  # in seconds
+                'min_burst_stop': Parameter(0.1),
+                'dec_winner_rate': Parameter(35, 'Hz')}}
 
         param_ranges = {
             'c': ParameterArray(np.array([0])),
             'bfb': ParameterArray(np.array([0])),
+            'targetB': ParameterArray(np.array([2]), 'Hz'),  # np.arange(1.5, 4.5, 0.5)
             # 'iter': ParameterArray(np.arange(0, 4))
             }
 
