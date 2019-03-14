@@ -193,7 +193,7 @@ def get_plasticity_params(task_info):
     tauB = task_info['plastic']['tauB']
     tau_update = task_info['plastic']['tau_update']
     eta0 = task_info['plastic']['eta0']
-    valid_burst = task_info['plastic']['valid_burst']
+    valid_burst = task_info['sim']['valid_burst']
     min_burst_stop = task_info['plastic']['min_burst_stop']
     targetB = task_info['targetB']
     B0 = tauB * targetB
