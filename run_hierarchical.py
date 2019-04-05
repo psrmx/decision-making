@@ -72,6 +72,7 @@ def run_hierarchical(task_info, taskdir, tempdir):
 
     # inhibitory plasticity results
     if task_info['sim']['plasticity']:
+        spksSE = monitors[0]
         dend_mon = monitors[-1]
         last_muOUd = np.array(dend_mon.muOUd[:, -int(5e3):].mean(axis=1))
 
@@ -88,8 +89,8 @@ def run_hierarchical(task_info, taskdir, tempdir):
 
     results = {
         'raw_data': {'last_muOUd': last_muOUd},
-        #              'poprates_sen': poprates_sen[:, settle_timeidx:],
-        #              'pref_msk': np.array([pref_msk])
+        #            'poprates_sen': poprates_sen[:, settle_timeidx:],
+        #            'pref_msk': np.array([pref_msk])
         'sim_state': np.zeros(1),
         'computed': computed
     }
@@ -138,10 +139,10 @@ class JobInfoExperiment(Experiment):
             'sim': {
                 'sim_dt': Parameter(0.1, 'ms'),
                 'stim_dt': Parameter(1, 'ms'),
-                'runtime': Parameter(10, 'second'),
+                'runtime': Parameter(3, 'second'),
                 'settle_time': Parameter(0, 'second'),
                 'stim_on': Parameter(0, 'second'),
-                'stim_off': Parameter(10, 'second'),
+                'stim_off': Parameter(3, 'second'),
                 'replicate_stim': False,
                 'num_method': 'euler',
                 'seed_con': Parameter(1284),
@@ -154,7 +155,7 @@ class JobInfoExperiment(Experiment):
 
             'plastic': {
                 # 'targetB': Parameter(2, 'Hz'),
-                'tauB': Parameter(50000, 'ms'),
+                'tauB': Parameter(5000, 'ms'),
                 'tau_update': Parameter(10, 'ms'),
                 'eta0': Parameter(5, 'pA'),
                 'min_burst_stop': Parameter(0.1),

@@ -1,6 +1,6 @@
 import numpy as np
 from brian2.units import second
-from helper_funcs import unitless, handle_downsampled_spks
+from helper_funcs import unitless, handle_downsampled_spks, smooth_rate
 
 
 def spks2neurometric(task_info, spk_mon, raster=False):
@@ -11,18 +11,17 @@ def spks2neurometric(task_info, spk_mon, raster=False):
     new_dt = unitless(task_info['sim']['stim_dt'], second, as_int=False)
     runtime = unitless(task_info['sim']['runtime'], second)
     settle_time = unitless(task_info['sim']['settle_time'], second)
-    smooth_win = unitless(task_info['sim']['smooth_win'], new_dt) / 2
+    smooth_win = unitless(task_info['sim']['smooth_win'], second, as_int=False) / 2
     valid_burst = task_info['sim']['valid_burst']
     tps = unitless(int((runtime - settle_time)), new_dt)
-    kernel = np.ones((int(smooth_win / new_dt)))
     spk_times = spk_mon.spike_trains()
     nn = spk_times.__len__()
 
     # allocate variables
-    events = lil_matrix((nn, tps), dtype='float32')  # events
-    bursts = lil_matrix((nn, tps), dtype='float32')  # bursts
+    events = lil_matrix((nn, tps), dtype='float32')   # events
+    bursts = lil_matrix((nn, tps), dtype='float32')   # bursts
     singles = lil_matrix((nn, tps), dtype='float32')  # single spikes
-    spikes = lil_matrix((nn, tps), dtype='float32')  # normal, all spikes
+    spikes = lil_matrix((nn, tps), dtype='float32')   # normal, all spikes
     all_isis = np.zeros(1)
 
     for n in np.arange(nn, dtype=int):
@@ -38,6 +37,7 @@ def spks2neurometric(task_info, spk_mon, raster=False):
             is_burst_bool = is_burst.astype(bool)
             is_event = np.logical_not(is_burst_bool).astype(int)
             nspks_per_burst = np.zeros(is_burst.shape)
+            nburst = 0
 
             if is_burst.any():
                 # add preceding burst
@@ -82,10 +82,7 @@ def spks2neurometric(task_info, spk_mon, raster=False):
     sub = int(nn / 2)
     rates = []
     for i, matrix in enumerate([events, bursts, singles, spikes]):
-        popraster1 = np.squeeze(matrix.toarray()[:sub].mean(axis=0)) / smooth_win
-        popraster2 = np.squeeze(matrix.toarray()[sub:].mean(axis=0)) / smooth_win
-        rate1 = np.convolve(popraster1, kernel, mode='same')
-        rate2 = np.convolve(popraster2, kernel, mode='same')
+        rate1, rate2 = smooth_rate(matrix.toarray(), smooth_win, new_dt, sub)
         rates.append(np.vstack((rate1, rate2)))
 
     # unpack accordingly
