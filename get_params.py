@@ -161,7 +161,7 @@ def get_stim_params(task_info):
     sigma_stim = 0.212 * sigma  # std of modulations of stim inputs
     sigma_ind = 0.212 * sigma   # std of modulations in individual inputs
     tau_stim = 20*ms            # correlation time constant of OU process
-    stim_dt = 1 * ms            # integration step of stimulus
+    stim_dt = task_info['sim']['stim_dt']  # integration step of stimulus
 
     # adjust external current
     if task_info['sim']['2c_model']:
