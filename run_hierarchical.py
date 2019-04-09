@@ -48,11 +48,20 @@ def run_hierarchical(task_info, taskdir, tempdir):
         net, monitors = cir.get_hierarchical_net(task_info)
 
     # generate stimulus
-    Irec, stim1, stim2, stim_time = cir.mk_sen_stimulus(task_info, arrays=True)
+    if not task_info['sim']['online_stim']:
+        Irec, stim1, stim2, stim_time = cir.mk_sen_stimulus(task_info, arrays=True)
 
     print('Running simulation...')
     net.run(runtime, report='stdout', profile=True)
     print(profiling_summary(net=net, show=10))
+
+    # stim monitor if not TimedArray
+    if task_info['sim']['online_stim']:
+        stim_mon = monitors[2]
+        sub = int(stim_mon.source.__len__() / 2)
+        stim_time = stim_mon.t_
+        stim1 = stim_mon.I[:sub]
+        stim2 = stim_mon.I[sub:]
 
     # fig1 plot on cluster
     if task_info['sim']['plt_fig1']:
@@ -73,7 +82,7 @@ def run_hierarchical(task_info, taskdir, tempdir):
     # inhibitory plasticity results
     if task_info['sim']['plasticity']:
         spksSE = monitors[0]
-        dend_mon = monitors[-1]
+        dend_mon = monitors[1]
         last_muOUd = np.array(dend_mon.muOUd[:, -int(5e3):].mean(axis=1))
 
         # plot weights
@@ -139,10 +148,10 @@ class JobInfoExperiment(Experiment):
             'sim': {
                 'sim_dt': Parameter(0.1, 'ms'),
                 'stim_dt': Parameter(1, 'ms'),
-                'runtime': Parameter(3, 'second'),
+                'runtime': Parameter(75, 'second'),
                 'settle_time': Parameter(0, 'second'),
                 'stim_on': Parameter(0, 'second'),
-                'stim_off': Parameter(3, 'second'),
+                'stim_off': Parameter(75, 'second'),
                 'replicate_stim': False,
                 'num_method': 'euler',
                 'seed_con': Parameter(1284),
@@ -151,7 +160,8 @@ class JobInfoExperiment(Experiment):
                 '2c_model': True,
                 'plt_fig1': False,
                 'burst_analysis': True,
-                'plasticity': True},
+                'plasticity': True,
+                'online_stim': True},
 
             'plastic': {
                 # 'targetB': Parameter(2, 'Hz'),
