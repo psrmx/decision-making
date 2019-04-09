@@ -29,10 +29,9 @@ eqs_naud_soma = '''
     dg_i/dt = (-g_i + x_i) / tau_d          : 1
     dx_i/dt = -x_i / tau_r                  : 1
     dw_s/dt = -w_s / tau_ws                 : amp
-    tau = taus          : second
-    Cm = Cms            : farad
-    I = Irec(t, i)      : amp
-    V_d                 : volt (linked)
+    tau = taus      : second
+    Cm = Cms        : farad
+    V_d             : volt (linked)
 '''
 
 eqs_naud_dend = '''
@@ -61,6 +60,21 @@ eqs_plasticity_linked = '''
     burst_stop      : 1 (linked)
 '''
 
+# Sensory stimulus group
+eqs_stim_common = '''
+    dz/dt = -z/tau_stim + (sigma_stim*xi_1) / sqrt(tau_stim/2) : 1
+'''
+
+eqs_stim_online = '''
+    I = I0 * (1 + c*mu + sigma_stim*z + sigma_ind*zk) : amp
+    dzk/dt = -zk/tau_stim + (sigma_stim*xi_n1) / sqrt(tau_stim/2) : 1
+    mu          : 1
+    z           : 1 (linked)
+'''
+
+eqs_stim_linked = '''I : amp (linked)'''
+eqs_stim_array = '''I = Irec(t, i)  : amp'''
+
 # Decision neurons
 eqs_wang_exc = '''
     dV/dt = (-g_ea*(V-VrevE) - g_ent*(V-VrevE)/(1+exp(-V/mV*0.062)/3.57) - g_i*(V-VrevI) - (V-Vl)) / tau : volt (unless refractory)
@@ -84,7 +98,7 @@ eqs_wang_inh = '''
 '''
 
 eqs_NMDA = '''
-        g_ent_post = w_nmda * g_en_pre      : 1 (summed)
-        w_nmda  : 1 (constant)
-        w       : 1 (constant)
+    g_ent_post = w_nmda * g_en_pre      : 1 (summed)
+    w_nmda  : 1 (constant)
+    w       : 1 (constant)
 '''
