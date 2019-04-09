@@ -11,7 +11,7 @@ import get_params as params
 from brian2 import PoissonGroup, PoissonInput, linked_var, TimedArray, seed, Network
 from brian2.groups import NeuronGroup
 from brian2.synapses import Synapses
-from brian2.units import amp, ms
+from brian2.units import amp, second, ms
 from helper_funcs import get_OUstim, unitless
 
 
@@ -138,7 +138,8 @@ def mk_sen_circuit(task_info):
 
     # neuron groups
     if two_comp:
-        senE = NeuronGroup(N_E, model=nm.eqs_naud_soma, method=num_method, threshold='V>=Vt',
+        eqs_soma = nm.eqs_naud_soma + nm.eqs_stim_array
+        senE = NeuronGroup(N_E, model=eqs_soma, method=num_method, threshold='V>=Vt',
                            reset='''V = Vl
                                     w_s += bws''',
                            refractory='tau_refE', namespace=paramsen, name='senE')
@@ -190,8 +191,15 @@ def mk_sen_circuit_plastic(task_info):
     paramplastic = params.get_plasticity_params(task_info)
     tau_update = paramplastic['tau_update']
 
+    # equations
+    if task_info['sim']['online_stim']:
+        eqs_soma_plastic = nm.eqs_naud_soma + nm.eqs_stim_linked + nm.eqs_plasticity_linked
+        paramstim = params.get_stim_params(task_info)
+        paramplastic = {**paramplastic, **paramstim}
+    else:
+        eqs_soma_plastic = nm.eqs_naud_soma + nm.eqs_stim_array + nm.eqs_plasticity_linked
+
     # neuron groups
-    eqs_soma_plastic = nm.eqs_naud_soma + nm.eqs_plasticity_linked
     eqs_dend_plastic = nm.eqs_naud_dend + nm.eqs_plasticity
     senE = NeuronGroup(N_E, model=eqs_soma_plastic, method=num_method, threshold='V>=Vt',
                        reset='''V = Vl
@@ -207,6 +215,12 @@ def mk_sen_circuit_plastic(task_info):
                        refractory='tau_refI', namespace=paramplastic, name='senI')
     extS = PoissonGroup(N_X, rates='nu_ext', namespace=paramplastic)
 
+    # subgroups
+    senE1 = senE[:N_E1]
+    senE2 = senE[N_E1:]
+    dend1 = dend[:N_E1]
+    dend2 = dend[N_E1:]
+
     # linked variables
     senE.V_d = linked_var(dend, 'V_d')
     senE.B = linked_var(dend, 'B')
@@ -214,12 +228,18 @@ def mk_sen_circuit_plastic(task_info):
     senE.burst_stop = linked_var(dend, 'burst_stop')
     senE.muOUd = linked_var(dend, 'muOUd')
     dend.lastspike_soma = linked_var(senE, 'lastspike')
-
-    # subgroups
-    senE1 = senE[:N_E1]
-    senE2 = senE[N_E1:]
-    dend1 = dend[:N_E1]
-    dend2 = dend[N_E1:]
+    if task_info['sim']['online_stim']:
+        stim_dt = paramstim['stim_dt']
+        stim_common = NeuronGroup(2, model=nm.eqs_stim_common, method=num_method,
+                                  dt=stim_dt, namespace=paramstim, name='stim_common')
+        stimE = NeuronGroup(N_E, model=nm.eqs_stim_online, method=num_method,
+                            dt=stim_dt, namespace=paramstim, name='stimE')
+        stimE1 = stimE[:N_E1]
+        stimE2 = stimE[N_E1:]
+        stimE.z = linked_var(stim_common, 'z', index=np.hstack((np.zeros(N_E1, dtype=int), np.ones(N_E1, dtype=int))))
+        stimE1.mu = paramstim['mu1']
+        stimE2.mu = paramstim['mu2']
+        senE.I = linked_var(stimE, 'I')
 
     # update rule
     dend1.muOUd = '-50*pA - rand()*100*pA'  # random initialisation in [-150:-50 pA]
@@ -234,6 +254,9 @@ def mk_sen_circuit_plastic(task_info):
     subgroups = {'SE1': senE1, 'SE2': senE2,
                  'dend1': dend1, 'dend2': dend2}
     synapses = {**sen_synapses, **{'synDXdend': synDXdend}}
+
+    if task_info['sim']['online_stim']:
+        groups = {**groups, **{'stim_common': stim_common, 'stimE': stimE}}
 
     return groups, synapses, subgroups
 
@@ -328,44 +351,46 @@ def mk_sen_stimulus(task_info, arrays=False):
         # every iter has different stimuli
         np.random.seed()
 
-    # simulation params
-    nn = int(task_info['sen']['N_E'] * task_info['sen']['sub'])     # no. of neurons in sub-pop1
-    stim_dt = task_info['sim']['stim_dt']
-    runtime = unitless(task_info['sim']['runtime'], stim_dt)
-    stim_on = unitless(task_info['sim']['stim_on'], stim_dt)
-    stim_off = unitless(task_info['sim']['stim_off'], stim_dt)
-    tp = stim_off - stim_on                             # total stim points
+    # TimedArray stim
+    if not task_info['sim']['online_stim']:
+        # simulation params
+        nn = int(task_info['sen']['N_E'] * task_info['sen']['sub'])     # no. of neurons in sub-pop1
+        stim_dt = task_info['sim']['stim_dt']
+        runtime = unitless(task_info['sim']['runtime'], stim_dt)
+        stim_on = unitless(task_info['sim']['stim_on'], stim_dt)
+        stim_off = unitless(task_info['sim']['stim_off'], stim_dt)
+        tp = stim_off - stim_on                             # total stim points
+        stim_time = np.linspace(0, unitless(task_info['sim']['runtime'], second), runtime)
 
-    # stimulus namespace
-    paramstim = params.get_stim_params(task_info)
-    tau = unitless(paramstim['tau_stim'], stim_dt)      # OU time constant
-    c = paramstim['c']
-    I0 = paramstim['I0']
-    mu1 = paramstim['mu1']
-    mu2 = paramstim['mu2']
-    sigma_stim = paramstim['sigma_stim']
-    sigma_ind = paramstim['sigma_ind']
+        # stimulus namespace
+        paramstim = params.get_stim_params(task_info)
+        tau = unitless(paramstim['tau_stim'], stim_dt)      # OU time constant
+        c = paramstim['c']
+        I0 = paramstim['I0']
+        mu1 = paramstim['mu1']
+        mu2 = paramstim['mu2']
+        sigma_stim = paramstim['sigma_stim']
+        sigma_ind = paramstim['sigma_ind']
 
-    # common and private part
-    z1 = np.tile(get_OUstim(tp, tau), (nn, 1))
-    z2 = np.tile(get_OUstim(tp, tau), (nn, 1))
-    zk1 = get_OUstim(tp * nn, tau).reshape(nn, tp)
-    zk2 = get_OUstim(tp * nn, tau).reshape(nn, tp)
+        # common and private part
+        z1 = np.tile(get_OUstim(tp, tau), (nn, 1))
+        z2 = np.tile(get_OUstim(tp, tau), (nn, 1))
+        zk1 = get_OUstim(tp * nn, tau).reshape(nn, tp)
+        zk2 = get_OUstim(tp * nn, tau).reshape(nn, tp)
 
-    # stim2TimedArray with zero padding if necessary
-    i1 = I0 * (1 + c * mu1 + sigma_stim * z1 + sigma_ind * zk1)
-    i2 = I0 * (1 + c * mu2 + sigma_stim * z2 + sigma_ind * zk2)
-    i1t = np.concatenate((np.zeros((stim_on, nn)), i1.T, np.zeros((runtime - stim_off, nn))), axis=0)
-    i2t = np.concatenate((np.zeros((stim_on, nn)), i2.T, np.zeros((runtime - stim_off, nn))), axis=0)
-    Irec = TimedArray(np.concatenate((i1t, i2t), axis=1)*amp, dt=stim_dt)
+        # stim2TimedArray with zero padding if necessary
+        i1 = I0 * (1 + c * mu1 + sigma_stim * z1 + sigma_ind * zk1)
+        i2 = I0 * (1 + c * mu2 + sigma_stim * z2 + sigma_ind * zk2)
+        i1t = np.concatenate((np.zeros((stim_on, nn)), i1.T, np.zeros((runtime - stim_off, nn))), axis=0)
+        i2t = np.concatenate((np.zeros((stim_on, nn)), i2.T, np.zeros((runtime - stim_off, nn))), axis=0)
+        Irec = TimedArray(np.concatenate((i1t, i2t), axis=1)*amp, dt=stim_dt)
 
-    if arrays:
-        stim1 = i1t.T
-        stim2 = i2t.T
-        stim_time = np.linspace(0, task_info['sim']['runtime'], runtime)
-        return Irec, stim1, stim2, stim_time
+        if arrays:
+            stim1 = i1t.T
+            stim2 = i2t.T
+            return Irec, stim1, stim2, stim_time
 
-    return Irec
+        return Irec
 
 
 def mk_fffb_synapses(task_info, dec_subgroups, sen_subgroups):
@@ -491,7 +516,7 @@ def mk_monitors(task_info, dec_groups, sen_groups, dec_subgroups, sen_subgroups)
     return monitors
 
 
-def mk_monitors_plastic(sen_groups, sen_subgroups):
+def mk_monitors_plastic(task_info, sen_groups, sen_subgroups):
     """Define monitors to track results from plasticity experiment."""
     from brian2.monitors import SpikeMonitor, StateMonitor
 
@@ -500,10 +525,12 @@ def mk_monitors_plastic(sen_groups, sen_subgroups):
     dend1 = sen_subgroups['dend1']
 
     # create monitors
+    stim_dt = task_info['sim']['stim_dt']
     spksSE = SpikeMonitor(senE)
-    dend_mon = StateMonitor(dend1, variables=['muOUd', 'Ibg', 'g_ea', 'B'], record=True, dt=1*ms)
+    dend_mon = StateMonitor(dend1, variables=['muOUd', 'Ibg', 'g_ea', 'B'], record=True, dt=stim_dt)
+    online_stim_mon = StateMonitor(senE, variables=['I'], record=True, dt=stim_dt)
 
-    return [spksSE, dend_mon]
+    return [spksSE, dend_mon, online_stim_mon]
 
 
 def get_hierarchical_net(task_info):
@@ -533,7 +560,7 @@ def get_plasticity_net(task_info):
 
     seed()
     sen_groups = set_init_conds(sen_groups, two_comp=True, plastic=True)
-    monitors = mk_monitors_plastic(sen_groups, sen_subgroups)
+    monitors = mk_monitors_plastic(task_info, sen_groups, sen_subgroups)
     net = Network(sen_groups.values(), sen_synapses.values(), *monitors, name='plasticitynet')
 
     return net, monitors
