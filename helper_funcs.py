@@ -28,7 +28,7 @@ def get_OUstim(n, tau):
     Ornstein-Uhlenbeck process in discrete time
     """
     a = np.exp(-(1 / tau))
-    i = lfilter(np.ones(1), [1, -a], np.sqrt(1 - a * a) * np.random.randn(n))
+    i = lfilter(np.ones(1), [1, -a], np.sqrt(1 - a**2) * np.random.randn(n))
     return np.asanyarray(i)
 
 
@@ -61,7 +61,7 @@ def smooth_rate(rate, smooth_win, dt, sub):
 def plot_fig1(monitors, win, taskdir):
     sns.set(context='notebook', style='darkgrid')
 
-    spksSE, spksDE, rateDE1, rateDE2, rateDI, rateSE1, rateSE2, rateSI, stim1, stim2, stimtime = monitors
+    spksSE, spksDE, rateDE1, rateDE2, rateDI, rateSE1, rateSE2, rateSI, stim1, stim2, stim_time = monitors
     subDE = int(spksDE.source.__len__() / 2)
     subSE = int(spksSE.source.__len__() / 2)
     nticks = 4
@@ -128,8 +128,8 @@ def plot_fig1(monitors, win, taskdir):
     # Stimulus
     fig1.add_axes(axs[6])
     plt.title('Stimulus')
-    plt.plot(stimtime, stim1.mean(axis=0)*1e12, color='C3', lw=1.5)   # stim1.t, axis=0
-    plt.plot(stimtime, stim2.mean(axis=0)*1e12, color='C0', lw=1.5)   # np.arange(0, 3.5, 1e-3), axis=1
+    plt.plot(stim_time, stim1.mean(axis=0)*1e12, color='C3', lw=1.5)   # stim1.t, axis=0
+    plt.plot(stim_time, stim2.mean(axis=0)*1e12, color='C0', lw=1.5)   # np.arange(0, 3.5, 1e-3), axis=1
     plt.xlabel("time (s)")
     plt.ylabel("current (pA)")
     #plt.xlim(0, 5)
