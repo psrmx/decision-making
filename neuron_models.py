@@ -55,7 +55,6 @@ eqs_plasticity = '''
 
 eqs_plasticity_linked = '''
     muOUd           : amp (linked)
-    B               : 1 (linked)
     burst_start     : 1 (linked)
     burst_stop      : 1 (linked)
 '''
@@ -66,8 +65,8 @@ eqs_stim_common = '''
 '''
 
 eqs_stim_online = '''
-    I = I0 * (1 + c*mu + sigma_stim*z + sigma_ind*zk) : amp
-    dzk/dt = -zk/tau_stim + (sigma_stim*xi_n1) / sqrt(tau_stim/2) : 1
+    I = I0 * (1 + c*mu + z + zk) : amp
+    dzk/dt = -zk/tau_stim + (sigma_ind*xi_n1) / sqrt(tau_stim/2) : 1
     mu          : 1
     z           : 1 (linked)
 '''
