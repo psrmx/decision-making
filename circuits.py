@@ -223,7 +223,6 @@ def mk_sen_circuit_plastic(task_info):
 
     # linked variables
     senE.V_d = linked_var(dend, 'V_d')
-    senE.B = linked_var(dend, 'B')
     senE.burst_start = linked_var(dend, 'burst_start')
     senE.burst_stop = linked_var(dend, 'burst_stop')
     senE.muOUd = linked_var(dend, 'muOUd')
@@ -247,13 +246,13 @@ def mk_sen_circuit_plastic(task_info):
 
     # connections
     sen_synapses = mk_sen_synapses(task_info, senE, senI, extS, paramplastic)
-    extD, synDXdend = mk_poisson_fb(task_info, dend)
+    extD1, synDXdend1 = mk_poisson_fb(task_info, dend1)
 
     # variables to return
-    groups = {'SE': senE, 'dend': dend, 'SI': senI, 'SX': extS, 'DX': extD}
+    groups = {'SE': senE, 'dend': dend, 'SI': senI, 'SX': extS, 'DX': extD1}
     subgroups = {'SE1': senE1, 'SE2': senE2,
                  'dend1': dend1, 'dend2': dend2}
-    synapses = {**sen_synapses, **{'synDXdend': synDXdend}}
+    synapses = {**sen_synapses, **{'synDXdend': synDXdend1}}
 
     if task_info['sim']['online_stim']:
         groups = {**groups, **{'stim_common': stim_common, 'stimE': stimE}}
@@ -435,9 +434,9 @@ def mk_fffb_synapses(task_info, dec_subgroups, sen_subgroups):
     return fffb_synapses
 
 
-def mk_poisson_fb(task_info, dend):
+def mk_poisson_fb(task_info, dend1):
     """
-    Feedback synapses from poisson mimicking decision circuit, to sensory.
+    Feedback synapses from poisson mimicking decision circuit, to sensory plastic subpopulation.
 
     :return: a poisson group and a synapse object
     """
@@ -447,18 +446,17 @@ def mk_poisson_fb(task_info, dend):
     num_method = task_info['sim']['num_method']
 
     # Poisson group
-    N_E = task_info['sen']['N_E']           # number of exc neurons (1600)
+    N_E = task_info['dec']['N_E']           # number of exc neurons (1600)
     subDE = task_info['dec']['sub']         # stim-selective fraction in decision exc neurons
     N_DX = int(subDE * N_E)                 # number decision mock neurons
-    extD = PoissonGroup(N_DX, rates=task_info['plastic']['dec_winner_rate'])
+    extD1 = PoissonGroup(N_DX, rates=task_info['plastic']['dec_winner_rate'])
 
     # FB synapse
-    synDXdend = Synapses(extD, dend, model='w = w_fb : 1', method=num_method, delay=d,
-                         on_pre='x_ea += w',
-                         namespace=paramfffb, name='synXDEdend')
-    synDXdend.connect(p='eps')
+    synDXdend1 = Synapses(extD1, dend1, model='w = w_fb : 1', method=num_method, delay=d,
+                         on_pre='x_ea += w', namespace=paramfffb, name='synDXdend1')
+    synDXdend1.connect(p='eps')
 
-    return extD, synDXdend
+    return extD1, synDXdend1
 
 
 def set_init_conds(neuron_groups, two_comp=False, plastic=False):
@@ -474,7 +472,7 @@ def set_init_conds(neuron_groups, two_comp=False, plastic=False):
 
     if two_comp:
         neuron_groups['dend'].V_d = '-72*mV + 2*mV*rand()'
-        neuron_groups['dend'].g_ea = '0.2*rand()'
+        neuron_groups['dend'].g_ea = '0.02*rand()'
         if not plastic:
             last_muOUd = np.loadtxt('last_muOUd.csv')
             neuron_groups['dend'].muOUd = np.tile(last_muOUd, 2) * amp
