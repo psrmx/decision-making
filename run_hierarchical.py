@@ -24,7 +24,7 @@ def run_hierarchical(task_info, taskdir, tempdir):
     # specific imports
     import circuits as cir
     from burst_analysis import spks2neurometric
-    from helper_funcs import plot_fig1, plot_fig2, plot_fig3, plot_plastic_rasters, plot_isis
+    from helper_funcs import plot_fig1, plot_fig2, plot_fig3, plot_plastic_rasters, plot_isis, choice_selection
     from brian2 import set_device, defaultclock, seed, profiling_summary
     from brian2.core.magic import start_scope
 
@@ -47,7 +47,6 @@ def run_hierarchical(task_info, taskdir, tempdir):
     else:
         net, monitors = cir.get_hierarchical_net(task_info)
 
-    # generate stimulus
     if not task_info['sim']['online_stim']:
         Irec, stim1, stim2, stim_time = cir.mk_sen_stimulus(task_info, arrays=True)
 
@@ -63,10 +62,17 @@ def run_hierarchical(task_info, taskdir, tempdir):
         stim1 = stim_mon.I[:sub]
         stim2 = stim_mon.I[sub:]
 
+    # allocate variables for results
+    raw_data = np.zeros(1)
+    computed = np.zeros(1)
+
     # fig1 plot on cluster
     if task_info['sim']['plt_fig1']:
         mon2plt = monitors.copy() + [stim1, stim2, stim_time]
         plot_fig1(mon2plt, smooth_win, taskdir)
+
+        # choice selection
+        raw_data = choice_selection()
 
     # burst analysis
     if task_info['sim']['burst_analysis']:
@@ -75,34 +81,26 @@ def run_hierarchical(task_info, taskdir, tempdir):
         plot_fig2(task_info, events, bursts, spikes, stim1, stim2, stim_time, taskdir)
         plot_isis(task_info, isis, bursts, events, taskdir)
         computed = {'events': events, 'bursts': bursts, 'singles': singles, 'spikes': spikes, 'isis': isis}
-    else:
-        computed = np.zeros(1)
-        isis = np.zeros(1)
 
     # inhibitory plasticity results
     if task_info['sim']['plasticity']:
         spksSE = monitors[0]
         dend_mon = monitors[1]
-        last_muOUd = np.array(dend_mon.muOUd[:, -int(5e3):].mean(axis=1))
+        last_muOUd = np.array(dend_mon.muOUd[:, -int(5e3):].mean(axis=1))  # last five seconds
 
         # plot weights
         events, bursts, singles, spikes, isis = spks2neurometric(task_info, spksSE, raster=False)
         plot_fig3(task_info, dend_mon, events, bursts, spikes, taskdir)
-        plot_plastic_rasters(task_info, spksSE, bursts, isis, taskdir)
-    else:
-        isis = np.zeros(1)
-        last_muOUd = np.zeros(1)
+        plot_plastic_rasters(task_info, spksSE, bursts, taskdir)
 
-    # Choice selection
-    # population rates and downsample
+        # prepare results
+        raw_data = {'last_muOUd': last_muOUd}
+        computed = {'events': events, 'bursts': bursts, 'singles': singles, 'spikes': spikes, 'isis': isis}
 
     results = {
-        'raw_data': {'last_muOUd': last_muOUd},
-        #            'poprates_sen': poprates_sen[:, settle_timeidx:],
-        #            'pref_msk': np.array([pref_msk])
+        'raw_data': raw_data,
         'sim_state': np.zeros(1),
-        'computed': computed
-    }
+        'computed': computed}
 
     return results
 
@@ -148,10 +146,10 @@ class JobInfoExperiment(Experiment):
             'sim': {
                 'sim_dt': Parameter(0.1, 'ms'),
                 'stim_dt': Parameter(1, 'ms'),
-                'runtime': Parameter(75, 'second'),
+                'runtime': Parameter(500, 'second'),
                 'settle_time': Parameter(0, 'second'),
                 'stim_on': Parameter(0, 'second'),
-                'stim_off': Parameter(75, 'second'),
+                'stim_off': Parameter(500, 'second'),
                 'replicate_stim': False,
                 'num_method': 'euler',
                 'seed_con': Parameter(1284),
@@ -159,13 +157,12 @@ class JobInfoExperiment(Experiment):
                 'valid_burst': Parameter(16e-3),
                 '2c_model': True,
                 'plt_fig1': False,
-                'burst_analysis': True,
+                'burst_analysis': False,
                 'plasticity': True,
                 'online_stim': True},
 
             'plastic': {
-                # 'targetB': Parameter(2, 'Hz'),
-                'tauB': Parameter(5000, 'ms'),
+                'tauB': Parameter(50000, 'ms'),
                 'tau_update': Parameter(10, 'ms'),
                 'eta0': Parameter(5, 'pA'),
                 'min_burst_stop': Parameter(0.1),
@@ -173,10 +170,10 @@ class JobInfoExperiment(Experiment):
 
         param_ranges = {
             'c': ParameterArray(np.array([0])),
-            'bfb': ParameterArray(np.array([0])),
+            'bfb': ParameterArray(np.array([1])),
             'targetB': ParameterArray(np.array([2]), 'Hz'),  # np.arange(1.5, 4.5, 0.5)
             # 'iter': ParameterArray(np.arange(0, 4))
-            }
+        }
 
         # add params to tables
         self.tables.add_parameters(param_fixed)
