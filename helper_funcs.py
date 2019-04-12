@@ -55,6 +55,7 @@ def smooth_rate(rate, smooth_win, dt, sub):
 
     rate /= smooth_win
     smoothed_rate = np.convolve(kernel, np.squeeze(rate), mode='same')
+
     return smoothed_rate, smoothed_rate
 
 
@@ -142,6 +143,17 @@ def plot_fig1(monitors, win, taskdir):
     plt.close(fig1)
 
 
+def choice_selection():
+
+    choice_data = {}
+    # poprates_sen[:, settle_timeidx:]
+    # choice_data = {'poprates_dec': poprates_dec,
+    #             'poprates_sen': poprates_sen,
+    #             'preferred_mask': pref_mask}
+
+    return choice_data
+
+
 def plot_fig2(task_info, events, bursts, spikes, stim1, stim2, stim_time, taskdir):
     sns.set(context='notebook', style='darkgrid')
 
@@ -201,28 +213,31 @@ def plot_fig2(task_info, events, bursts, spikes, stim1, stim2, stim_time, taskdi
 
 def plot_fig3(task_info, dend_mon, events, bursts, spikes, taskdir):
     """plot results of plasticity rule. Events, bursts and spikes are rates"""
-    sns.set(context='notebook', style='darkgrid')
+    sns.set(context='talk', style='darkgrid')
 
     # params
     eta0 = unitless(task_info['plastic']['eta0'], pA)
     tauB = unitless(task_info['plastic']['tauB'], ms)
     tau_update = unitless(task_info['plastic']['tau_update'], ms)
     target = unitless(task_info['targetB'], Hz, as_int=False)
-    B0 = tauB * target
+    b_fb = task_info['bfb']
+    B0 = unitless(task_info['plastic']['tauB'], second) * target
     eta = eta0 * tau_update / tauB
     time = np.linspace(0, dend_mon.t_[-1], bursts.shape[1])
     last_time = time[-1]
-    zoom_inteval = (last_time-1, last_time)
+    zoom_inteval = (last_time-2, last_time)
+    xlim_inteval = (0, last_time)
     nn2plt = 10
 
     nrows, ncols = (4, 3)
-    fig3, axs = plt.subplots(nrows, ncols, figsize=(int(4*nrows), int(5*ncols)), sharex='row')
+    fig3, axs = plt.subplots(nrows, ncols, figsize=(int(6*ncols), int(4*nrows)), sharex='row')
 
     fig3.add_axes(axs[0, 0])
     plt.title(r'Plasticity weights')
     plt.plot(dend_mon.t_, dend_mon.muOUd[:nn2plt].T*1e12, color='gray', lw=0.5)
     plt.plot(dend_mon.t_, dend_mon.muOUd.mean(axis=0)*1e12, color='C0', lw=1.5)
     plt.ylabel(r'$\mu_{OU_{d}}$ $(pA)$')
+    plt.xlim(xlim_inteval)
     create_inset(axs[0, 0], (dend_mon.t_, dend_mon.muOUd.mean(axis=0) * 1e12), 'C0', zoom_inteval)
 
     fig3.add_axes(axs[0, 1])
@@ -230,7 +245,8 @@ def plot_fig3(task_info, dend_mon, events, bursts, spikes, taskdir):
     plt.plot(dend_mon.t_, dend_mon.Ibg[:nn2plt].T*1e9, color='gray', lw=0.5)
     plt.plot(dend_mon.t_, dend_mon.Ibg.mean(axis=0)*1e9, color='black', lw=1.5)
     plt.ylabel('$I_{OU_{d}}$ $(nA)$')
-    create_inset(axs[0, 1], (dend_mon.t_, dend_mon.Ibg.mean(axis=0) * 1e9), 'C0', zoom_inteval)
+    plt.xlim(xlim_inteval)
+    create_inset(axs[0, 1], (dend_mon.t_, dend_mon.Ibg.mean(axis=0)*1e9), 'black', zoom_inteval)
 
     fig3.add_axes(axs[1, 0])
     B = dend_mon.B.mean(axis=0)
@@ -238,14 +254,16 @@ def plot_fig3(task_info, dend_mon, events, bursts, spikes, taskdir):
     plt.plot(dend_mon.t_, dend_mon.B[:nn2plt].T - B0, color='gray', lw=0.5)
     plt.plot(dend_mon.t_, B - B0, color='C4', lw=1.5)
     plt.ylabel(r'$B - B0$')
+    plt.xlim(xlim_inteval)
     create_inset(axs[1, 0], (dend_mon.t_, B - B0), 'C4', zoom_inteval)
 
     fig3.add_axes(axs[1, 1])
-    plt.title(r'Dendritic input current')
-    plt.plot(dend_mon.t_, dend_mon.g_ea[:nn2plt].T*1e12, color='gray', lw=0.5)
-    plt.plot(dend_mon.t_, dend_mon.g_ea.mean(axis=0)*1e12, color='C3', lw=1.5)
-    plt.ylim(0, 1)
-    plt.ylabel(r'$\sim I_{ext}$ $(a.u.)$')
+    plt.title(r'Dendritic feedback current')
+    plt.plot(dend_mon.t_, dend_mon.g_ea[:nn2plt].T, color='gray', lw=0.5)
+    plt.plot(dend_mon.t_, dend_mon.g_ea.mean(axis=0), color='C3', lw=1.5)
+    plt.xlim(xlim_inteval)
+    #plt.ylim(0, 0.1)
+    plt.ylabel(r'$g_{ea}$ $(a.u.)$ ${\sim}I_{dec}$')
     create_inset(axs[1, 1], (dend_mon.t_, dend_mon.g_ea.mean(axis=0)), 'C3', zoom_inteval)
 
     # plot neurometric params per subpopulation
@@ -253,12 +271,14 @@ def plot_fig3(task_info, dend_mon, events, bursts, spikes, taskdir):
         fig3.add_axes(axs[2+i, 0])
         plt.plot(time, spikes[i], lw=1.5, color='C5')
         plt.ylabel(r'$A$ (Hz)')
+        plt.xlim(xlim_inteval)
         create_inset(axs[2+i, 0], (time, spikes[i]), 'C5', zoom_inteval)
 
         fig3.add_axes(axs[2+i, 1])
         plt.plot(time, bursts[i], lw=1.5, color='C1')
         plt.axhline(target, color='gray', lw=2, ls='dashed')
         plt.ylabel(r'$B$ (Hz)')
+        plt.xlim(xlim_inteval)
         create_inset(axs[2+i, 1], (time, bursts[i]), 'C1', zoom_inteval)
 
         fig3.add_axes(axs[2+i, 2])
@@ -266,6 +286,7 @@ def plot_fig3(task_info, dend_mon, events, bursts, spikes, taskdir):
         bfracc[np.isnan(bfracc)] = 0    # handle division by 0 - because no event also means no burst!
         plt.plot(time, bfracc*100, lw=1.5, color='C6')
         plt.ylabel(r'$F$ (%)')
+        plt.xlim(xlim_inteval)
         plt.ylim(0, 100)
         create_inset(axs[2+i, 2], (time, bfracc*100), 'C6', zoom_inteval)
 
@@ -282,6 +303,7 @@ def plot_fig3(task_info, dend_mon, events, bursts, spikes, taskdir):
     plt.plot(0, c='white', label=r'eta = %.3f pA' % eta)
     plt.plot(0, c='white', label=r'tauB = %i ms' % tauB)
     plt.plot(0, c='white', label=r'tau_update = %i ms' % tau_update)
+    plt.plot(0, c='white', label=r'b_fb = %i' % b_fb)
     plt.legend(loc='center', fontsize='large', frameon=False)
     plt.axis('off')
     plt.grid('off')
@@ -290,12 +312,13 @@ def plot_fig3(task_info, dend_mon, events, bursts, spikes, taskdir):
     plt.axis('off')
     plt.grid('off')
 
+    plt.tight_layout()
     fig3.savefig(taskdir + '/figure3.png')
     plt.close(fig3)
 
 
-def plot_plastic_rasters(task_info, spk_mon, bursts, isis, taskdir):
-    sns.set(context='notebook', style='darkgrid')
+def plot_plastic_rasters(task_info, spk_mon, bursts, taskdir):
+    sns.set(context='talk', style='darkgrid')
 
     # params
     target = unitless(task_info['targetB'], Hz, as_int=False)
@@ -303,30 +326,35 @@ def plot_plastic_rasters(task_info, spk_mon, bursts, isis, taskdir):
     subSE = min(int(spk_mon.source.__len__() / 2), 20)
     nticks = 4
 
-    fig4, axs = plt.subplots(1, 3, figsize=(12, 3), sharex=False)
+    fig4, axs = plt.subplots(1, 3, figsize=(12, 4), sharex=False)
 
-    # sensory circuit
+    # raster plots
+    pre_time = 5
+    interval = 5
+    spks_pre = spk_mon.t[spk_mon.t < pre_time]
+    spks_post = spk_mon.t[spk_mon.t > last_time-interval]
+    spksSE1 = spk_mon.i < subSE
+    burst_pre =
     fig4.add_axes(axs[0])
     plt.title('Before plasticity')
-    spksSE1 = spk_mon.i < subSE
-    plot_raster(spk_mon.i[spksSE1], spk_mon.t[spksSE1], color='gray', marker='.', markersize=0.7, time_unit=second)
+    plot_raster(spk_mon.i[spksSE1], spks_pre[spksSE1], color='C0', time_unit=second)
     plt.yticks(np.arange(0, subSE+1, subSE/nticks))
     plt.ylabel(r'$neuron$ $index$')  # , {'horizontalalignment':'right'})
-    plt.xlim(5, 10)
+    plt.xlim(pre_time-interval, pre_time)
     plt.xlabel(r'$Time$ $(s)$')
 
     fig4.add_axes(axs[1])
     plt.title('After plasticity')
-    plot_raster(spk_mon.i[spksSE1], spk_mon.t[spksSE1], color='C5', marker='.', markersize=0.7, time_unit=second)
+    plot_raster(spk_mon.i[spksSE1], spks_post[spksSE1], color='C0', time_unit=second)
     plt.yticks(np.arange(0, subSE+1, subSE/nticks))
     plt.ylabel(r'$neuron$ $index$')  # , {'horizontalalignment':'right'})
-    plt.xlim(last_time - 5, last_time)
+    plt.xlim(last_time - interval, last_time)
     plt.xlabel(r'$Time$ $(s)$')
 
     fig4.add_axes(axs[2])
     maxbrate = 5.5
     plt.title('Plasticity rule accuracy')
-    plt.plot(target, bursts[:subSE].mean(axis=0)[int(last_time - 10):].mean(), c='C1', marker='o')
+    plt.plot(target, bursts[:int(bursts.shape[0]/2), int(last_time - 10):].mean(), c='C1', marker='o')
     plt.plot(np.linspace(0, maxbrate, 100), np.linspace(0, maxbrate, 100), c='gray', lw=1.5, ls='dashed')
     plt.xlabel(r'$Target$ $rate$ $(Hz)$')
     plt.ylabel(r'$Burst$ $rate$ $(Hz)$')
