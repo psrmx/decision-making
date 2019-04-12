@@ -64,17 +64,21 @@ def spks2neurometric(task_info, spk_mon, raster=False):
             bursttimes = this_spks[is_burst.astype(bool)]
             singltimes = this_spks[issingle.astype(bool)]
 
+            # TODO - break the function into two:
+            # TODO - the first one returns eventtimes, bursttimes, ...
+            # TODO - the second one returns either a raster or a rate!
+
             # fill sparse matrix with the proper indices of the newdt
             events[n, handle_downsampled_spks(np.floor(eventtimes / new_dt)).astype(int)] = 1
             bursts[n, handle_downsampled_spks(np.floor(bursttimes / new_dt)).astype(int)] = 1
             singles[n, handle_downsampled_spks(np.floor(singltimes / new_dt)).astype(int)] = 1
             spikes[n, handle_downsampled_spks(np.floor(this_spks / new_dt)).astype(int)] = 1
 
-    # sanity check
-    all_isis *= 1e3      # in ms
+    # sanity check --> sometimes it doesn't work because of downsample
     num_spikes = spikes.toarray().sum()
     assert len(spk_mon.t_[spk_mon.t_ >= settle_time]) == num_spikes, "You lost some spks while counting them..."
 
+    all_isis *= 1e3  # in ms
     if raster:
         return events.toarray(), bursts.toarray(), singles.toarray(), spikes.toarray(), all_isis
 
