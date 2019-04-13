@@ -3,29 +3,24 @@ from brian2.units import second
 from helper_funcs import unitless, handle_downsampled_spks, smooth_rate
 
 
-def spks2neurometric(task_info, spk_mon, raster=False):
-    """Calculates spike statistics from SpikeMonitor.spike_times(), following Naud & Sprekeler 2018."""
-    from scipy.sparse import lil_matrix
+def spk_times2neurometric_times(task_info, spk_mon):
+    """Calculates burst, event and single times from SpikeMonitor.spike_times(), following Naud & Sprekeler 2018."""
 
     # params
-    new_dt = unitless(task_info['sim']['stim_dt'], second, as_int=False)
-    runtime = unitless(task_info['sim']['runtime'], second)
     settle_time = unitless(task_info['sim']['settle_time'], second)
-    smooth_win = unitless(task_info['sim']['smooth_win'], second, as_int=False) / 2
     valid_burst = task_info['sim']['valid_burst']
-    tps = unitless(int((runtime - settle_time)), new_dt)
-    spk_times = spk_mon.spike_trains()
-    nn = spk_times.__len__()
+    mon_spk_times = spk_mon.spike_trains()
+    nn = mon_spk_times.__len__()
 
     # allocate variables
-    events = lil_matrix((nn, tps), dtype='float32')   # events
-    bursts = lil_matrix((nn, tps), dtype='float32')   # bursts
-    singles = lil_matrix((nn, tps), dtype='float32')  # single spikes
-    spikes = lil_matrix((nn, tps), dtype='float32')   # normal, all spikes
+    event_times = {}
+    burst_times = {}
+    single_times = {}
+    spike_times = {}
     all_isis = np.zeros(1)
 
     for n in np.arange(nn, dtype=int):
-        this_spks = unitless(spk_times[n], second, as_int=False)
+        this_spks = unitless(mon_spk_times[n], second, as_int=False)
         this_spks = this_spks[this_spks >= settle_time]  # ignore spks during settle_time
         this_spks -= settle_time
 
@@ -60,75 +55,53 @@ def spks2neurometric(task_info, spk_mon, raster=False):
             assert allspks == len(this_spks), "ups, sth is weird in the burst quantification :("
 
             # get events, bursts, singles times
-            eventtimes = this_spks[is_event.astype(bool)]
-            bursttimes = this_spks[is_burst.astype(bool)]
-            singltimes = this_spks[issingle.astype(bool)]
-
-            # TODO - break the function into two:
-            # TODO - the first one returns eventtimes, bursttimes, ...
-            # TODO - the second one returns either a raster or a rate!
-
-            # fill sparse matrix with the proper indices of the newdt
-            events[n, handle_downsampled_spks(np.floor(eventtimes / new_dt)).astype(int)] = 1
-            bursts[n, handle_downsampled_spks(np.floor(bursttimes / new_dt)).astype(int)] = 1
-            singles[n, handle_downsampled_spks(np.floor(singltimes / new_dt)).astype(int)] = 1
-            spikes[n, handle_downsampled_spks(np.floor(this_spks / new_dt)).astype(int)] = 1
-
-    # sanity check --> sometimes it doesn't work because of downsample
-    num_spikes = spikes.toarray().sum()
-    assert len(spk_mon.t_[spk_mon.t_ >= settle_time]) == num_spikes, "You lost some spks while counting them..."
+            event_times[n] = this_spks[is_event.astype(bool)]
+            burst_times[n] = this_spks[is_burst.astype(bool)]
+            single_times[n] = this_spks[issingle.astype(bool)]
+            spike_times[n] = this_spks
 
     all_isis *= 1e3  # in ms
-    if raster:
-        return events.toarray(), bursts.toarray(), singles.toarray(), spikes.toarray(), all_isis
-
-    # from lil_matrices2popraster and then 2rate per subpopulation
-    sub = int(nn / 2)
-    rates = []
-    for i, matrix in enumerate([events, bursts, singles, spikes]):
-        rate1, rate2 = smooth_rate(matrix.toarray(), smooth_win, new_dt, sub)
-        rates.append(np.vstack((rate1, rate2)))
-
-    # unpack accordingly
-    eventrate = rates[0]
-    burstrate = rates[1]
-    singlerate = rates[2]
-    firingrate = rates[3]
-
-    return eventrate, burstrate, singlerate, firingrate, all_isis
+    return event_times, burst_times, single_times, spike_times, all_isis
 
 
-# TODO: save burst times and spksperburst or not?
+def neurometric_times2raster(task_info, all_spk_times, rate=False):
+    """takes dictionaries of spk_times and transforms them to rasters or rates"""
+    from scipy.sparse import lil_matrix
+
+    # params
+    event_times, burst_times, single_times, spk_times = all_spk_times
+    new_dt = unitless(task_info['sim']['stim_dt'], second, as_int=False)
+    runtime = unitless(task_info['sim']['runtime'], second)
+    settle_time = unitless(task_info['sim']['settle_time'], second)
+    smooth_win = unitless(task_info['sim']['smooth_win'], second, as_int=False) / 2
+    tps = unitless(int((runtime - settle_time)), new_dt)
+    nn = spk_times.__len__()
+
+    # allocate variables
+    events = lil_matrix((nn, tps), dtype='float32')  # events
+    bursts = lil_matrix((nn, tps), dtype='float32')  # bursts
+    singles = lil_matrix((nn, tps), dtype='float32')  # single spikes
+    spikes = lil_matrix((nn, tps), dtype='float32')  # normal, all spikes
+
+    for n in np.arange(nn, dtype=int):
+        # fill sparse matrix with the proper indices of the newdt
+        events[n, handle_downsampled_spks(np.floor(event_times[n] / new_dt)).astype(int)] = 1
+        bursts[n, handle_downsampled_spks(np.floor(burst_times[n] / new_dt)).astype(int)] = 1
+        singles[n, handle_downsampled_spks(np.floor(single_times[n] / new_dt)).astype(int)] = 1
+        spikes[n, handle_downsampled_spks(np.floor(spk_times[n] / new_dt)).astype(int)] = 1
+
+    if rate:
+        # from matrix2rate per subpopulation
+        sub = int(nn / 2)
+        rates = []
+        for i, matrix in enumerate([events, bursts, singles, spikes]):
+            rate1, rate2 = smooth_rate(matrix.toarray(), smooth_win, new_dt, sub)
+            rates.append(np.vstack((rate1, rate2)))
+
+        # event_rate, burst_rate, single_rate, firing_rate
+        return rates[0], rates[1], rates[2], rates[3]
+
+    return events.toarray(), bursts.toarray(), singles.toarray(), spikes.toarray()
 
 
-# def calculate_bursts(task_info):
-#     dt = spksSE.clock.dt
-#     validburst = task_info['sen']['2c']['validburst']
-#     smooth_win_ = smooth_win / second
-#
-#     if task_info['sim']['burstanalysis']:
-#
-#         if task_info['sim']['2c_model']:
-#             last_muOUd = np.array(dend_mon.muOUd[:, -int(1e3):].mean(axis=1))
-#
-#         if task_info['sim']['plasticdend']:
-#             # calculate neurometric info per population
-#             events, bursts, singles, spikes, isis = spks2neurometric(spksSE, runtime, settle_time, validburst,
-#                                                                      smooth_win=smooth_win_, raster=False)
-#
-#             # plot & save weigths after convergence
-#             eta0 = task_info['sen']['2c']['eta0']
-#             tauB = task_info['sen']['2c']['tauB']
-#             targetB = task_info['targetB']
-#             B0 = tauB * targetB
-#             tau_update = task_info['sen']['2c']['tau_update']
-#             eta = eta0 * tau_update / tauB
-#             plot_weights(dend_mon, events, bursts, spikes, [targetB, B0, eta, tauB, tau_update, smooth_win_], taskdir)
-#             plot_rasters(spksSE, bursts, targetB, isis, runtime_, taskdir)
-#         else:
-#             # calculate neurometric per neuron
-#             events, bursts, singles, spikes, isis = spks2neurometric(spksSE, runtime, settle_time, validburst,
-#                                                                      smooth_win=smooth_win_, raster=True)
-#             plot_neurometric(events, bursts, spikes, stim1, stim2, stimtime,
-#                              (settle_time_, runtime_), taskdir, smooth_win_)
-#             plot_isis(isis, bursts, events, (settle_time_, runtime_), taskdir)
+# TODO: save spksperburst or not?
