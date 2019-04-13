@@ -23,7 +23,7 @@ def run_hierarchical(task_info, taskdir, tempdir):
 
     # specific imports
     import circuits as cir
-    from burst_analysis import spks2neurometric
+    from burst_analysis import spk_times2neurometric_times, neurometric_times2raster
     from helper_funcs import plot_fig1, plot_fig2, plot_fig3, plot_plastic_rasters, plot_isis, choice_selection
     from brian2 import set_device, defaultclock, seed, profiling_summary
     from brian2.core.magic import start_scope
@@ -77,7 +77,9 @@ def run_hierarchical(task_info, taskdir, tempdir):
     # burst analysis
     if task_info['sim']['burst_analysis']:
         spksSE = monitors[0]
-        events, bursts, singles, spikes, isis = spks2neurometric(task_info, spksSE, raster=True)
+        event_times, burst_times, single_times, spk_times, isis = spk_times2neurometric_times(task_info, spksSE)
+        all_spk_times = [event_times, burst_times, single_times, spk_times]
+        events, bursts, singles, spikes = neurometric_times2raster(task_info, all_spk_times, rate=False)
         plot_fig2(task_info, events, bursts, spikes, stim1, stim2, stim_time, taskdir)
         plot_isis(task_info, isis, bursts, events, taskdir)
         computed = {'events': events, 'bursts': bursts, 'singles': singles, 'spikes': spikes, 'isis': isis}
@@ -87,11 +89,11 @@ def run_hierarchical(task_info, taskdir, tempdir):
         spksSE = monitors[0]
         dend_mon = monitors[1]
         last_muOUd = np.array(dend_mon.muOUd[:, -int(5e3):].mean(axis=1))  # last five seconds
-
-        # plot weights
-        events, bursts, singles, spikes, isis = spks2neurometric(task_info, spksSE, raster=False)
+        event_times, burst_times, single_times, spk_times, isis = spk_times2neurometric_times(task_info, spksSE)
+        all_spk_times = [event_times, burst_times, single_times, spk_times]
+        events, bursts, singles, spikes = neurometric_times2raster(task_info, all_spk_times, rate=True)
         plot_fig3(task_info, dend_mon, events, bursts, spikes, taskdir)
-        plot_plastic_rasters(task_info, spksSE, bursts, taskdir)
+        plot_plastic_rasters(task_info, spk_times, burst_times, bursts, taskdir)
 
         # prepare results
         raw_data = {'last_muOUd': last_muOUd}
@@ -146,10 +148,10 @@ class JobInfoExperiment(Experiment):
             'sim': {
                 'sim_dt': Parameter(0.1, 'ms'),
                 'stim_dt': Parameter(1, 'ms'),
-                'runtime': Parameter(500, 'second'),
+                'runtime': Parameter(20, 'second'),
                 'settle_time': Parameter(0, 'second'),
                 'stim_on': Parameter(0, 'second'),
-                'stim_off': Parameter(500, 'second'),
+                'stim_off': Parameter(20, 'second'),
                 'replicate_stim': False,
                 'num_method': 'euler',
                 'seed_con': Parameter(1284),
