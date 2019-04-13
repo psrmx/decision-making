@@ -312,42 +312,46 @@ def plot_fig3(task_info, dend_mon, events, bursts, spikes, taskdir):
     plt.axis('off')
     plt.grid('off')
 
-    plt.tight_layout()
     fig3.savefig(taskdir + '/figure3.png')
     plt.close(fig3)
 
 
-def plot_plastic_rasters(task_info, spk_mon, bursts, taskdir):
+def plot_plastic_rasters(task_info, spk_times, burst_times, bursts, taskdir):
     sns.set(context='talk', style='darkgrid')
 
     # params
     target = unitless(task_info['targetB'], Hz, as_int=False)
     last_time = unitless(task_info['sim']['runtime'], second)
-    subSE = min(int(spk_mon.source.__len__() / 2), 20)
+    nn = len(spk_times)
+    sub = min(int(nn / 2), 20)
+    pre_time = 5  # in seconds
+    interval = 5
     nticks = 4
 
     fig4, axs = plt.subplots(1, 3, figsize=(12, 4), sharex=False)
 
     # raster plots
-    pre_time = 5
-    interval = 5
-    spks_pre = spk_mon.t[spk_mon.t < pre_time]
-    spks_post = spk_mon.t[spk_mon.t > last_time-interval]
-    spksSE1 = spk_mon.i < subSE
-    burst_pre =
     fig4.add_axes(axs[0])
     plt.title('Before plasticity')
-    plot_raster(spk_mon.i[spksSE1], spks_pre[spksSE1], color='C0', time_unit=second)
-    plt.yticks(np.arange(0, subSE+1, subSE/nticks))
-    plt.ylabel(r'$neuron$ $index$')  # , {'horizontalalignment':'right'})
+    for n in range(sub):
+        spks_pre = spk_times[n][spk_times[n] < pre_time]
+        bursts_pre = burst_times[n][burst_times[n] < pre_time]
+        plt.scatter(spks_pre, np.ones(len(spks_pre))*n, c='C0', marker='.', alpha=0.8, s=1.5)
+        plt.scatter(bursts_pre, np.ones(len(bursts_pre))*n, c='C3', marker='.', s=1.5)
+    plt.yticks(np.arange(0, sub+1, sub/nticks))
+    plt.ylabel(r'$neuron$ $index$')
     plt.xlim(pre_time-interval, pre_time)
     plt.xlabel(r'$Time$ $(s)$')
 
     fig4.add_axes(axs[1])
     plt.title('After plasticity')
-    plot_raster(spk_mon.i[spksSE1], spks_post[spksSE1], color='C0', time_unit=second)
-    plt.yticks(np.arange(0, subSE+1, subSE/nticks))
-    plt.ylabel(r'$neuron$ $index$')  # , {'horizontalalignment':'right'})
+    for n in range(sub):
+        spks_post = spk_times[n][spk_times[n] > last_time-interval]
+        bursts_post = burst_times[n][burst_times[n] > last_time-interval]
+        plt.scatter(spks_post, np.ones(len(spks_post))*n, c='C0', marker='.', alpha=0.8, s=1.5)
+        plt.scatter(bursts_post, np.ones(len(bursts_post))*n, c='C3', marker='.', s=1.5)
+    plt.yticks(np.arange(0, sub+1, sub/nticks))
+    plt.ylabel(r'$neuron$ $index$')
     plt.xlim(last_time - interval, last_time)
     plt.xlabel(r'$Time$ $(s)$')
 
