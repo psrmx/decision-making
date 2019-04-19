@@ -105,7 +105,7 @@ def get_2c_params(task_info):
     """Parameters for two compartmental model of excitatory neurons within the sensory circuit."""
     # soma
     Cms = 370*pF            # capacitance
-    taus = 16*ms            # timescale of membrane potential
+    taus = 14.97*ms         # timescale of membrane potential, original 16*ms
     gleakEs = Cms/taus
     tauws = 100*ms          # timescale of recovery ("slow") variable
     bws = -200*pA           # strength of spike-triggered facilitation (bws < 0)
@@ -142,8 +142,9 @@ def get_2c_params(task_info):
     paramsen = {**param_wimmer, **param_naud}
 
     # re-adjust synaptic conductance
-    for gx in ['gEE', 'gIE', 'gXE']:
+    for gx in ['gEE', 'gIE']:   #, 'gXE']:
         paramsen[gx] = adjust_variable(param_wimmer[gx], param_wimmer['gleakE'], gleakEs)
+    paramsen['gXE'] = 2.17*nS
 
     return paramsen
 
@@ -155,6 +156,7 @@ def get_stim_params(task_info):
     except KeyError:
         c = 0
     I0 = 80 * pA                # mean input current for zero-coherence stim
+    I0_wimmer = I0
     mu1 = 0.25                  # av. additional input current to pop1 at highest coherence
     mu2 = -0.25                 # av. additional input current to pop2 at highest coherence
     sigma = 1                   # amplitude of temporal modulations of stim
@@ -168,7 +170,7 @@ def get_stim_params(task_info):
         paramsen = get_2c_params(task_info)
         I0 = adjust_variable(I0, paramsen['CmE'], paramsen['Cms'])
 
-    paramstim = {'c': c, 'I0': I0, 'mu1': mu1, 'mu2': mu2,  'tau_stim': tau_stim,
+    paramstim = {'c': c, 'I0': I0, 'I0_wimmer': I0_wimmer, 'mu1': mu1, 'mu2': mu2,  'tau_stim': tau_stim,
                  'stim_dt': stim_dt, 'sigma_stim': sigma_stim, 'sigma_ind': sigma_ind}
 
     return paramstim
