@@ -65,7 +65,7 @@ eqs_stim_common = '''
 '''
 
 eqs_stim_online = '''
-    I = I0 * (1 + c*mu + z + zk) : amp
+    I = I0 + I0_wimmer * (c*mu + z + zk) : amp
     dzk/dt = -zk/tau_stim + (sigma_ind*xi_n1) / sqrt(tau_stim/2) : 1
     mu          : 1
     z           : 1 (linked)
