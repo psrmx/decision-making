@@ -241,8 +241,8 @@ def mk_sen_circuit_plastic(task_info):
         senE.I = linked_var(stimE, 'I')
 
     # update rule
-    dend1.muOUd = '-50*pA - rand()*100*pA'  # random initialisation in [-150:-50 pA]
-    dend1.run_regularly('muOUd = clip(muOUd - eta * (B - B0), -100*amp, 0)', dt=tau_update)
+    dend1.muOUd = '-95*pA - rand()*10*pA'  # random initialisation in [-105:-95 pA]
+    dend1.run_regularly('muOUd = clip(muOUd - eta * (B - B0), -100*amp, 0)', dt=tau_update, when='end')
 
     # connections
     sen_synapses = mk_sen_synapses(task_info, senE, senI, extS, paramplastic)
@@ -359,13 +359,14 @@ def mk_sen_stimulus(task_info, arrays=False):
         stim_on = unitless(task_info['sim']['stim_on'], stim_dt)
         stim_off = unitless(task_info['sim']['stim_off'], stim_dt)
         tp = stim_off - stim_on                             # total stim points
-        stim_time = np.linspace(0, unitless(task_info['sim']['runtime'], second), runtime)
+        stim_time = np.linspace(0, unitless(task_info['sim']['runtime'], second, as_int=False), runtime)
 
         # stimulus namespace
         paramstim = params.get_stim_params(task_info)
         tau = unitless(paramstim['tau_stim'], stim_dt)      # OU time constant
         c = paramstim['c']
         I0 = paramstim['I0']
+        I0_wimmer = paramstim['I0_wimmer']
         mu1 = paramstim['mu1']
         mu2 = paramstim['mu2']
         sigma_stim = paramstim['sigma_stim']
@@ -378,8 +379,8 @@ def mk_sen_stimulus(task_info, arrays=False):
         zk2 = get_OUstim(tp * nn, tau).reshape(nn, tp)
 
         # stim2TimedArray with zero padding if necessary
-        i1 = I0 * (1 + c * mu1 + sigma_stim * z1 + sigma_ind * zk1)
-        i2 = I0 * (1 + c * mu2 + sigma_stim * z2 + sigma_ind * zk2)
+        i1 = I0 + I0_wimmer * (c * mu1 + sigma_stim * z1 + sigma_ind * zk1)
+        i2 = I0 + I0_wimmer * (c * mu2 + sigma_stim * z2 + sigma_ind * zk2)
         i1t = np.concatenate((np.zeros((stim_on, nn)), i1.T, np.zeros((runtime - stim_off, nn))), axis=0)
         i2t = np.concatenate((np.zeros((stim_on, nn)), i2.T, np.zeros((runtime - stim_off, nn))), axis=0)
         Irec = TimedArray(np.concatenate((i1t, i2t), axis=1)*amp, dt=stim_dt)
@@ -453,31 +454,39 @@ def mk_poisson_fb(task_info, dend1):
 
     # FB synapse
     synDXdend1 = Synapses(extD1, dend1, model='w = w_fb : 1', method=num_method, delay=d,
-                         on_pre='x_ea += w', namespace=paramfffb, name='synDXdend1')
+                          on_pre='x_ea += w', namespace=paramfffb, name='synDXdend1')
     synDXdend1.connect(p='eps')
 
     return extD1, synDXdend1
 
 
-def set_init_conds(neuron_groups, two_comp=False, plastic=False):
-    """Returns the initialized neuron_groups according to adequate values."""
-    for neuron_group in neuron_groups.values():
-        if not neuron_group.name.startswith(('poisson', 'dend')):
-            try:
-                # init near Vt instead of 0 to avoid initial bump!
-                neuron_group.V = '-52*mV + 2*mV * rand()'
-                neuron_group.g_ea = '0.2 * rand()'
-            except AttributeError:
-                pass
+def init_conds_dec(dec_groups):
+    dec_groups['DE'].g_ea = '0.01 * rand()'
+    dec_groups['DI'].g_ea = '0.01 * rand()'
+    dec_groups['DE'].V = '-70*mV + (-50 + 70)*mV * rand()'
+    dec_groups['DI'].V = '-70*mV + (-50 + 70)*mV * rand()'   # '-70*mV + (-50 + 70)*mV * rand()'
 
+    return dec_groups
+
+
+def init_conds_sen(sen_groups, two_comp=False, plastic=False):
     if two_comp:
-        neuron_groups['dend'].V_d = '-72*mV + 2*mV*rand()'
-        neuron_groups['dend'].g_ea = '0.02*rand()'
+        sen_groups['SE'].g_ea = '0.1 * rand()'
+        sen_groups['SI'].g_ea = '0.1 * rand()'
+        sen_groups['SE'].V = '-72*mV + 2*mV * rand()'
+        sen_groups['SI'].V = '-72*mV + 2*mV * rand()'
+        sen_groups['dend'].V_d = '-72*mV + 2*mV*rand()'
+        #sen_groups['dend'].g_ea = '0.1*rand()'
         if not plastic:
             last_muOUd = np.loadtxt('last_muOUd.csv')
-            neuron_groups['dend'].muOUd = np.tile(last_muOUd, 2) * amp
+            sen_groups['dend'].muOUd = np.tile(last_muOUd, 2) * amp
+    else:
+        sen_groups['SE'].g_ea = '0.2 * rand()'
+        sen_groups['SI'].g_ea = '0.2 * rand()'
+        sen_groups['SE'].V = '-52*mV + 2*mV * rand()'
+        sen_groups['SI'].V = '-52*mV + 2*mV * rand()'
 
-    return neuron_groups
+    return sen_groups
 
 
 def mk_monitors(task_info, dec_groups, sen_groups, dec_subgroups, sen_subgroups):
@@ -509,7 +518,7 @@ def mk_monitors(task_info, dec_groups, sen_groups, dec_subgroups, sen_subgroups)
         spksDE = SpikeMonitor(decE[:nnDE])
         rateDI = PopulationRateMonitor(dec_groups['DI'])
         rateSI = PopulationRateMonitor(sen_groups['SI'])
-        monitors = [spksSE, spksDE, rateDE1, rateDE2, rateDI, rateSE1, rateSE2, rateSI]
+        monitors = [spksSE, rateDE1, rateDE2, rateSE1, rateSE2, spksDE, rateDI, rateSI]
 
     return monitors
 
@@ -541,13 +550,13 @@ def get_hierarchical_net(task_info):
     sen_groups, sen_synapses, sen_subgroups = mk_sen_circuit(task_info)
     fffb_synapses = mk_fffb_synapses(task_info, dec_subgroups, sen_subgroups)
 
-    seed()
-    dec_groups = set_init_conds(dec_groups)
-    sen_groups = set_init_conds(sen_groups, two_comp=task_info['sim']['2c_model'])
+    seed(task_info['seed'])
+    dec_groups = init_conds_dec(dec_groups)
+    sen_groups = init_conds_sen(sen_groups, two_comp=task_info['sim']['2c_model'])
     monitors = mk_monitors(task_info, dec_groups, sen_groups, dec_subgroups, sen_subgroups)
     net = Network(dec_groups.values(), dec_synapses.values(),
                   sen_groups.values(), sen_synapses.values(),
-                  fffb_synapses.values(), *monitors, name='hierarchicalnet')
+                  fffb_synapses.values(), *monitors, name='hierarchical_net')
 
     return net, monitors
 
@@ -556,9 +565,9 @@ def get_plasticity_net(task_info):
     """Construct sensory circuit for inhibitory plasticity experiment."""
     sen_groups, sen_synapses, sen_subgroups = mk_sen_circuit_plastic(task_info)
 
-    seed()
-    sen_groups = set_init_conds(sen_groups, two_comp=True, plastic=True)
+    seed(task_info['seed'])
+    sen_groups = init_conds_sen(sen_groups, two_comp=True, plastic=True)
     monitors = mk_monitors_plastic(task_info, sen_groups, sen_subgroups)
-    net = Network(sen_groups.values(), sen_synapses.values(), *monitors, name='plasticitynet')
+    net = Network(sen_groups.values(), sen_synapses.values(), *monitors, name='plasticity_net')
 
     return net, monitors
