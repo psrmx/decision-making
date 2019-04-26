@@ -11,8 +11,8 @@ import get_params as params
 from brian2 import PoissonGroup, PoissonInput, linked_var, TimedArray, seed, Network
 from brian2.groups import NeuronGroup
 from brian2.synapses import Synapses
-from brian2.units import amp, second, ms
-from helper_funcs import get_OUstim, unitless
+from brian2.units import amp, second
+from helper_funcs import get_OUstim, unitless, get_this_dt, get_this_time
 
 
 def mk_dec_circuit(task_info):
@@ -242,7 +242,7 @@ def mk_sen_circuit_plastic(task_info):
 
     # update rule
     dend1.muOUd = '-95*pA - rand()*10*pA'  # random initialisation in [-105:-95 pA]
-    dend1.run_regularly('muOUd = clip(muOUd - eta * (B - B0), -100*amp, 0)', dt=tau_update, when='end')
+    dend1.run_regularly('muOUd = clip(muOUd - eta * (B - B0), -100*amp, 0)', dt=tau_update)     # , when='end')
 
     # connections
     sen_synapses = mk_sen_synapses(task_info, senE, senI, extS, paramplastic)
@@ -358,7 +358,7 @@ def mk_sen_stimulus(task_info, arrays=False):
         runtime = unitless(task_info['sim']['runtime'], stim_dt)
         stim_on = unitless(task_info['sim']['stim_on'], stim_dt)
         stim_off = unitless(task_info['sim']['stim_off'], stim_dt)
-        tp = stim_off - stim_on                             # total stim points
+        tps = stim_off - stim_on                             # total stim points
         stim_time = np.linspace(0, unitless(task_info['sim']['runtime'], second, as_int=False), runtime)
 
         # stimulus namespace
@@ -373,10 +373,10 @@ def mk_sen_stimulus(task_info, arrays=False):
         sigma_ind = paramstim['sigma_ind']
 
         # common and private part
-        z1 = np.tile(get_OUstim(tp, tau), (nn, 1))
-        z2 = np.tile(get_OUstim(tp, tau), (nn, 1))
-        zk1 = get_OUstim(tp * nn, tau).reshape(nn, tp)
-        zk2 = get_OUstim(tp * nn, tau).reshape(nn, tp)
+        z1 = np.tile(get_OUstim(tps, tau), (nn, 1))
+        z2 = np.tile(get_OUstim(tps, tau), (nn, 1))
+        zk1 = get_OUstim(tps * nn, tau).reshape(nn, tps)
+        zk2 = get_OUstim(tps * nn, tau).reshape(nn, tps)
 
         # stim2TimedArray with zero padding if necessary
         i1 = I0 + I0_wimmer * (c * mu1 + sigma_stim * z1 + sigma_ind * zk1)
@@ -391,6 +391,21 @@ def mk_sen_stimulus(task_info, arrays=False):
             return Irec, stim1, stim2, stim_time
 
         return Irec
+
+
+def get_mean_stim(task_info, tps):
+    stim_dt = get_this_dt(task_info, tps)
+    time = get_this_time(task_info, tps)
+    runtime = unitless(task_info['sim']['runtime'], second, as_int=False)
+    settle_time = unitless(task_info['sim']['settle_time'], second, as_int=False)
+    stim_on_idx = (unitless(task_info['sim']['stim_on'], second, as_int=False) - settle_time) / stim_dt
+    stim_off_idx = (unitless(task_info['sim']['stim_off'], second, as_int=False) - settle_time) / stim_dt
+    I0 = params.get_stim_params(task_info)['I0']
+    stim = np.concatenate((np.zeros((2, int(stim_on_idx))),
+                          np.ones((2, int(stim_off_idx-stim_on_idx)))*I0,
+                          np.zeros((2, int((runtime/stim_dt)-stim_off_idx)))), axis=1)
+
+    return stim, time
 
 
 def mk_fffb_synapses(task_info, dec_subgroups, sen_subgroups):
@@ -461,8 +476,8 @@ def mk_poisson_fb(task_info, dend1):
 
 
 def init_conds_dec(dec_groups):
-    dec_groups['DE'].g_ea = '0.01 * rand()'
-    dec_groups['DI'].g_ea = '0.01 * rand()'
+    #dec_groups['DE'].g_ea = '0.01 * rand()'
+    #dec_groups['DI'].g_ea = '0.01 * rand()'
     dec_groups['DE'].V = '-70*mV + (-50 + 70)*mV * rand()'
     dec_groups['DI'].V = '-70*mV + (-50 + 70)*mV * rand()'   # '-70*mV + (-50 + 70)*mV * rand()'
 
@@ -471,18 +486,18 @@ def init_conds_dec(dec_groups):
 
 def init_conds_sen(sen_groups, two_comp=False, plastic=False):
     if two_comp:
-        sen_groups['SE'].g_ea = '0.1 * rand()'
-        sen_groups['SI'].g_ea = '0.1 * rand()'
+        #sen_groups['SE'].g_ea = '0.1 * rand()'
+        #sen_groups['SI'].g_ea = '0.1 * rand()'
         sen_groups['SE'].V = '-72*mV + 2*mV * rand()'
         sen_groups['SI'].V = '-72*mV + 2*mV * rand()'
-        sen_groups['dend'].V_d = '-72*mV + 2*mV*rand()'
-        #sen_groups['dend'].g_ea = '0.1*rand()'
+        # sen_groups['dend'].V_d = '-72*mV + 2*mV*rand()'
+        # sen_groups['dend'].g_ea = '0.1*rand()'
         if not plastic:
             last_muOUd = np.loadtxt('last_muOUd.csv')
             sen_groups['dend'].muOUd = np.tile(last_muOUd, 2) * amp
     else:
-        sen_groups['SE'].g_ea = '0.2 * rand()'
-        sen_groups['SI'].g_ea = '0.2 * rand()'
+        sen_groups['SE'].g_ea = '0.1 * rand()'
+        sen_groups['SI'].g_ea = '0.1 * rand()'
         sen_groups['SE'].V = '-52*mV + 2*mV * rand()'
         sen_groups['SI'].V = '-52*mV + 2*mV * rand()'
 
