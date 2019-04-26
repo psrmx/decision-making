@@ -4,6 +4,7 @@ import numpy as np
 from scipy.signal import lfilter
 from brian2.units import second, Hz, pA, ms
 from brian2tools import plot_raster, plot_rate
+from sklearn import metrics as mtr
 
 
 def adjust_variable(var_prev, cm_prev, cm_new):
@@ -26,14 +27,38 @@ def get_OUstim(n, tau):
     return np.asanyarray(i)
 
 
-def handle_downsampled_spks(spk_times):
-    """transforms 2 spks in one dt to 2 consecutive spks"""
+def get_this_dt(task_params, tps):
+    runtime = unitless(task_params['sim']['runtime'], second, as_int=False)
+    settle_time = unitless(task_params['sim']['settle_time'], second, as_int=False)
+    return np.round((runtime - settle_time)/tps, decimals=4)
+
+
+def get_this_time(task_params, tps):
+    settle_time = unitless(task_params['sim']['settle_time'], second, as_int=False)
+    runtime = unitless(task_params['sim']['runtime'], second, as_int=False)
+    return np.linspace(0, (runtime-settle_time), tps)
+
+
+def handle_downsampled_spikes(spk_times):
+    """transforms 2 spks in one dt to 2 consecutive spikes"""
     conflict = np.where(np.diff(spk_times) == 0)[0]
     spk_times[conflict] -= 1
-    # recursive search for no 2 spks in one dt bin
-    if np.any(np.diff(spk_times) == 0):
-        spk_times = handle_downsampled_spks(spk_times)
+    if np.any(np.diff(spk_times) == 0): # recursive search for no 2 spikes in one dt bin
+        spk_times = handle_downsampled_spikes(spk_times)
+
     return spk_times
+
+
+def instantaneous_rate(task_info, spikes):
+    """computes the instantaneous spike count for a neuron at each trl"""
+    n_trials, tps = spikes.shape
+    new_dt = get_this_dt(task_info, tps)
+    smooth_win = unitless(task_info['sim']['smooth_win'], second, as_int=False)
+    rates = np.empty((n_trials, tps))
+    for i in range(n_trials):
+        rates[i] = smooth_rate(spikes[i], smooth_win, new_dt, sub=[])[0]
+
+    return rates
 
 
 def smooth_rate(rate, smooth_win, dt, sub):
@@ -54,6 +79,7 @@ def smooth_rate(rate, smooth_win, dt, sub):
 
 
 def interpolate_rates(rate_mon1, rate_mon2, time, time_interp, smooth_win):
+    """downsample a population firing rate"""
     from scipy.interpolate import interp1d
     f_interp = [interp1d(time, rate.smooth_rate(window='flat', width=smooth_win)) for rate in [rate_mon1, rate_mon2]]
     return np.array([f(time_interp) for f in f_interp])
@@ -63,7 +89,8 @@ def choice_selection(task_info, monitors, downsample_step=10):
     # params
     sim_dt = unitless(task_info['sim']['sim_dt'], second, as_int=False)
     new_dt = unitless(task_info['sim']['stim_dt'], second, as_int=False) * downsample_step
-    settle_time_idx = unitless(task_info['sim']['settle_time'], second/new_dt)
+    settle_time = unitless(task_info['sim']['settle_time'], second, as_int=False)
+    settle_time_idx = int(settle_time / new_dt)
     runtime = unitless(task_info['sim']['runtime'], second, as_int=False)
     stim_off = unitless(task_info['sim']['stim_off'], second, as_int=False)
     smooth_win = task_info['sim']['smooth_win']
@@ -71,9 +98,9 @@ def choice_selection(task_info, monitors, downsample_step=10):
 
     # downsample population rates
     time = np.arange(0, runtime, sim_dt)
-    time_interp = np.arange(0, runtime, new_dt)
-    rates_dec = interpolate_rates(rate_dec1, rate_dec2, time, time_interp, smooth_win)
-    rates_sen = interpolate_rates(rate_sen1, rate_sen2, time, time_interp, smooth_win)
+    time_low_def = np.arange(0, runtime, new_dt)
+    rates_dec = interpolate_rates(rate_dec1, rate_dec2, time, time_low_def, smooth_win)
+    rates_sen = interpolate_rates(rate_sen1, rate_sen2, time, time_low_def, smooth_win)
 
     # choice selection
     dec_ival = np.array([(stim_off-0.5)/new_dt, stim_off/new_dt], dtype=int)
@@ -89,7 +116,55 @@ def choice_selection(task_info, monitors, downsample_step=10):
     return choice_data
 
 
-def plot_fig1(task_info, monitors, taskdir):
+def reorder_winner_pop(pop_array):
+    """case when second half of neurons belong to winner population"""
+    sub = int(pop_array.shape[0] / 2)
+    if sub > 1:
+        pop_array = np.array([pop_array[sub:], pop_array[:sub]])
+        return pop_array
+    return np.array([pop_array[1], pop_array[0]])
+
+
+def get_winner_loser_trials(rates, is_winner_pop):
+    """divide all trials of a neuron into winner and loser"""
+    winner_trials = rates[is_winner_pop]
+    loser_trials = rates[np.logical_not(is_winner_pop)]
+
+    return winner_trials, loser_trials
+
+
+def choice_probability(winner_trials, loser_trials, step=10):
+    """computes CP of a neuron from its spike distributions at each timepoint"""
+    tps = winner_trials.shape[1]
+    cp = np.empty(tps-step)     # int(tps/step)
+    bins = np.arange(-1, 151)
+    for t in range(tps-step):   # np.linspace(0, tps-step, int(tps/step), dtype=int)
+        x1, e1 = np.histogram(winner_trials[:, t:t + step], bins=bins, density=True)
+        x2, e2 = np.histogram(loser_trials[:, t:t + step], bins=bins, density=True)
+        cp[t] = mtr.auc(np.cumsum(x1), np.cumsum(x2))
+
+    return cp
+
+
+def save_figure(task_dir, fig, fig_name, tight=True):
+    if tight:
+        plt.tight_layout()
+    fig.savefig(task_dir + fig_name)
+    plt.close(fig)
+
+
+def create_inset(axes, data2plt, c, xlim, w=1, h=0.7, nyticks=4):
+    from mpl_toolkits.axes_grid1.inset_locator import inset_axes
+    ax_ins = inset_axes(axes, w, h, loc=1)
+    ax_ins.plot(data2plt[0], data2plt[1], color=c, lw=1.5)
+    ax_ins.set_xlim(xlim)
+    ax_ins.yaxis.get_major_locator().set_params(nbins=nyticks)
+    plt.xticks(visible=False)
+
+    return ax_ins
+
+
+def plot_fig1(task_info, monitors, task_dir):
     sns.set(context='talk', style='darkgrid')
 
     settle_time = unitless(task_info['sim']['settle_time'], second, as_int=False)
@@ -169,18 +244,16 @@ def plot_fig1(task_info, monitors, taskdir):
     for i in range(6):
         axs[i].set_xlabel('')
 
-    save_figure(taskdir, fig1, '/figure1.png', tight=False)
+    save_figure(task_dir, fig1, '/figure1.png', tight=False)
 
 
-def plot_fig2(task_info, events, bursts, spikes, stim1, stim2, stim_time, taskdir):
+def plot_fig2(task_info, events, bursts, spikes, stim1, stim2, stim_time, task_dir, fig_name='/figure2.png'):
     sns.set(context='talk', style='darkgrid')
 
     nn, tps = events.shape
-    settle_time = unitless(task_info['sim']['settle_time'], second, as_int=False)
-    runtime = unitless(task_info['sim']['runtime'], second, as_int=False)
-    time = np.linspace(settle_time, runtime, tps)
-    new_dt = np.round((runtime - settle_time) / tps, decimals=4)
-    smooth_win = unitless(task_info['sim']['smooth_win'], second, as_int=False) / 2
+    time = get_this_time(task_info, tps)
+    new_dt = get_this_dt(task_info, tps)
+    smooth_win = unitless(task_info['sim']['smooth_win'], second, as_int=False)
     sub = int(nn / 2)
 
     fig2, axs = plt.subplots(5, 2, figsize=(16, 10), sharex=True, sharey='row')
@@ -216,10 +289,10 @@ def plot_fig2(task_info, events, bursts, spikes, stim1, stim2, stim_time, taskdi
     axs[3, 0].set_ylabel(r'$F$ (%)')
     axs[3, 1].plot(time, bfracc2*100, lw=1.5, color='C6')
 
-    save_figure(taskdir, fig2, '/figure2.png', tight=False)
+    save_figure(task_dir, fig2, fig_name, tight=False)
 
 
-def plot_fig3(task_info, dend_mon, events, bursts, spikes, taskdir):
+def plot_fig3(task_info, dend_mon, events, bursts, spikes, task_dir):
     sns.set(context='talk', style='darkgrid')
 
     eta0 = unitless(task_info['plastic']['eta0'], pA)
@@ -233,7 +306,7 @@ def plot_fig3(task_info, dend_mon, events, bursts, spikes, taskdir):
     fb_rate = unitless(task_info['plastic']['dec_winner_rate'], Hz)
     time = np.linspace(0, dend_mon.t_[-1], bursts.shape[1])
     last_time = time[-1]
-    zoom_inteval = (last_time-2, last_time)
+    zoom_inteval = (last_time-10, last_time-5)
     xlim_inteval = (0, last_time)
     nn2plt = 10
     nrows, ncols = (4, 3)
@@ -315,10 +388,10 @@ def plot_fig3(task_info, dend_mon, events, bursts, spikes, taskdir):
     plt.axis('off')
     plt.grid('off')
 
-    save_figure(taskdir, fig3, '/figure3.png')
+    save_figure(task_dir, fig3, '/figure3.png')
 
 
-def plot_plastic_rasters(task_info, spk_times, burst_times, bursts, taskdir):
+def plot_plastic_rasters(task_info, spk_times, burst_times, bursts, task_dir):
     sns.set(context='talk', style='darkgrid')
 
     target = unitless(task_info['targetB'], Hz, as_int=False)
@@ -364,210 +437,83 @@ def plot_plastic_rasters(task_info, spk_times, burst_times, bursts, taskdir):
     plt.xlim(0, 5.5)
     plt.ylim(0, 5.5)
 
-    save_figure(taskdir, fig4, '/figure4.png')
+    save_figure(task_dir, fig4, '/figure4.png')
 
 
-def plot_isis(isis, ieis, ibis, taskdir, maxisi=510):
+def plot_isis(task_info, isis, ieis, ibis, task_dir, bins=np.arange(0, 760, 10), extend_burst=2):
     sns.set(context='notebook', style='darkgrid')
 
-    # get different versions of cvs
+    # params and different versions of cvs
+    valid_burst = task_info['sim']['valid_burst']*1e3
+    max_isi = int(bins[-1])
+    step = bins[1]
     cv = isis.std() / isis.mean()
     cv_b = ibis.std() / ibis.mean()
     cv_e = ieis.std() / ieis.mean()
 
     fig5, axs = plt.subplots(1, 3, figsize=(12, 3), sharex=False, sharey=False)
-    sns.distplot(isis, kde=False, norm_hist=True, bins=np.linspace(15, maxisi, 101), color='C5', ax=axs[0])
+    sns.distplot(isis[isis > valid_burst], kde=False, norm_hist=True, bins=bins, color='C5', ax=axs[0])
     axs[0].plot(0, c='white', label=r'CV = %.3f' % cv)
     axs[0].legend(loc='upper right')
     axs[0].set_title('Spikes')
     axs[0].set_ylabel(r'$Proportion$ $of$ $isi$')
-    axs[0].set_xlim(0, maxisi)
+    axs[0].set_xlim(valid_burst, max_isi)
 
-    sns.distplot(ieis, kde=False, norm_hist=True, bins=np.linspace(15, maxisi, 101), color='C2', ax=axs[1])
+    sns.distplot(ieis, kde=False, norm_hist=True, bins=bins, color='C2', ax=axs[1])
     axs[1].plot(0, c='white', label=r'CV_e = %.3f' % cv_e)
     axs[1].legend(loc='upper right')
     axs[1].set_title('Events')
     axs[1].set_xlabel(r'$Interspike$ $interval$ (ms)')
-    axs[1].set_xlim(0, maxisi)
+    axs[1].set_xlim(valid_burst, max_isi)
 
-    sns.distplot(ibis, kde=False, norm_hist=True, bins=np.linspace(15, 4*maxisi, 101), color='C1', ax=axs[2])
+    burst_bins = np.arange(0, extend_burst * max_isi, extend_burst * step)
+    sns.distplot(ibis, kde=False, norm_hist=True, bins=burst_bins, color='C1', ax=axs[2])
     axs[2].plot(0, c='white', label=r'CV_b = %.3f' % cv_b)
     axs[2].legend(loc='upper right')
     axs[2].set_title('Bursts')
-    axs[2].set_xlim(0, 4*maxisi)
+    axs[2].set_xlim(extend_burst * valid_burst, extend_burst * max_isi)
 
-    save_figure(taskdir, fig5, '/figure5.png')
-
-
-def save_figure(taskdir, fig, figname, tight=True):
-    if tight:
-        plt.tight_layout()
-    fig.savefig(taskdir + figname)
-    plt.close(fig)
+    save_figure(task_dir, fig5, '/figure5.png')
 
 
-def create_inset(axes, data2plt, c, xlim, w=1, h=0.7, nyticks=4):
-    from mpl_toolkits.axes_grid1.inset_locator import inset_axes
+def plot_pop_averages(task_info, rates_dec, rates_sen, cps, task_dir, fig_name='/fig1_averages.png'):
+    sns.set(context='talk', style='darkgrid')
 
-    ax_ins = inset_axes(axes, w, h, loc=1)
-    ax_ins.plot(data2plt[0], data2plt[1], color=c, lw=1.5)
-    ax_ins.set_xlim(xlim)
-    ax_ins.yaxis.get_major_locator().set_params(nbins=nyticks)
-    plt.xticks(visible=False)
+    # get params
+    _, pops, tps1 = rates_dec.shape
+    _, tps2 = cps.shape
+    time1 = get_this_time(task_info, tps1)
+    time2 = get_this_time(task_info, tps2)
+    settle_time = unitless(task_info['sim']['settle_time'], second, as_int=False)
+    stim_on = unitless(task_info['sim']['stim_on'], second, as_int=False) - settle_time
+    stim_off = unitless(task_info['sim']['stim_off'], second, as_int=False) - settle_time
 
-    return ax_ins
+    fig, axs = plt.subplots(3, 1, figsize=(8, 9), sharex=True)
+    fig.add_axes(axs[0])
+    plt.plot(time1, rates_dec[:, 0, :].mean(axis=0), c='C3', lw=2, label='pref')
+    plt.plot(time1, rates_dec[:, 1, :].mean(axis=0), c='C0', lw=2, label='non-pref')
+    plt.axvline(x=stim_on, color='gray', ls='dashed', lw=1.5)
+    plt.axvline(x=stim_off, color='gray', ls='dashed', lw=1.5)
+    plt.ylim(0, 50)
+    plt.title('Integration circuit')
+    plt.ylabel(r'$Population$ $rate$ (sp/sec)')
 
+    fig.add_axes(axs[1])
+    plt.title('Sensory circuit')
+    plt.plot(time1, rates_sen[:, 0, :].mean(axis=0), c='C3', lw=2, label='pref')
+    plt.plot(time1, rates_sen[:, 1, :].mean(axis=0), c='C0', lw=2, label='non-pref')
+    plt.axvline(x=stim_on, color='gray', ls='dashed', lw=1.5)
+    plt.axvline(x=stim_off, color='gray', ls='dashed', lw=1.5)
+    plt.ylim(0, 25)
+    plt.ylabel(r'$Population$ $rate$ (sp/sec)')
+    plt.legend(loc='upper right', fontsize='x-small')
 
-# # ideas to import params
-# def create_filenames(circuit, extension='.pkl'):
-#     """
-#     Create the array of filenames which will serve as pickle objects
-#     :param circuit: a str, 'sen' or 'dec'
-#     :param extension: a str, file extension to use, default pickle object
-#     :return: array of filenames
-#     """
-#     if isinstance(circuit, str) and isinstance(extension, str):
-#         param_groups = ['pop_', 'recurrent_', 'external_', 'neurons_', 'synapses_']
-#         return [s + circuit + extension for s in param_groups]
-#
-#
-# def create_param_object(filename, variables):
-#     """
-#     Creates a pickle object where specific set of params are stored.
-#     :param filename: a str, filename.pkl
-#     :param variables: a list, contains the variables to dump
-#     :return:
-#     """
-#     if validate_file(filename, ext='.pkl') and bool(variables):
-#         with open('params/'.join(filename), 'wb') as pkl_file:
-#             pickle.dump(variables, pkl_file)
-#     return
-#
-#
-# def load_param_object(filename, var_names):
-#     """
-#
-#     :param filename:
-#     :param var_names:
-#     :return:
-#     """
-#     if validate_file(filename, ext='.pkl'):
-#         pkl_file = open('params/'.join(filename), 'rb')
-#         variables = pickle.load(pkl_file)
-#         return variables
-#
-#
-# def get_params(which_circuit):
-#     """
-#     Contains the all the params to construct different versions of hierarchical net.
-#     It reads a particular subset and creates .pkl objects for the functions mk_*circuit to access these params.
-#     :param which_circuit: a str, 'sen' or 'dec'
-#     :return:
-#     """
-#     filenames = create_filenames(which_circuit)
-#
-#     # construct list of variables according to circuit
-#     if which_circuit == 'sen':
-#         pop_vars = [N_E, N_I, N_X, sub]
-#         recurrent_vars = [eps, w_p, w_m, gEE, gEI, gIE, gII, gmax]
-#         external_vars = [epsX, alphaX, gXE, gXI, nu_ext]
-#         neurons_vars = [CmE, CmI, gleakE, gleakI, Vl, Vt, Vr, tau_refE, tau_refI]
-#         synapse_vars = [VrevE, VrevI, tau_decay, tau_rise]
-#         grouped_vars = [pop_vars, recurrent_vars, external_vars, neurons_vars, synapse_vars]
-#
-#     elif which_circuit == 'dec':
-#         pop_vars = [N_E, N_I, sub]
-#         recurrent_vars = [w_p, w_m, gEEa, gEEn, gEIa, gEIn, gIE, gII]
-#         external_vars = [gXE, gXI, nu_ext, nu_ext1]
-#         neurons_vars = [CmE, CmI, gleakE, gleakI, Vl, Vt, Vr, tau_refE, tau_refI]
-#         synapse_vars = [VrevE, VrevI, tau_ampa, tau_gaba, tau_nmda_d, tau_nmda_r, alpha_nmda]
-#         grouped_vars = [pop_vars, recurrent_vars, external_vars, neurons_vars, synapse_vars]
-#
-#     for file, this_vars in zip(filenames, grouped_vars):
-#         if len(filenames) == len(grouped_vars):
-#             create_param_object(file, this_vars)
+    fig.add_axes(axs[2])
+    plt.plot(time2, cps.mean(axis=0), c='black', lw=2)
+    plt.axvline(x=stim_on, color='gray', ls='dashed', lw=1.5)
+    plt.axvline(x=stim_off, color='gray', ls='dashed', lw=1.5)
+    plt.xlabel(r'$Time$ (sec)')
+    plt.ylabel(r'$Choice$ $prob.$')
+    plt.ylim(0.41, 0.71)
 
-
-def handle_brian_units(value):
-    """
-    Converts str values to floats, units.
-
-    :param value: a str containing Brian2 supported values: 80*pA
-    :return: a tuple with num_value and units if given any
-    """
-    num_units = value.split('*')
-    try:
-        num = float(num_units[0])
-    except ValueError:
-        # value is not a number (maybe a bool?) --> we don't care
-        return None
-    else:
-        if len(num_units) > 1:
-            units = num_units[1]
-            return num, units
-        else:
-            return num
-
-
-def brian2param(line):
-    """
-    Transforms a line containing an equivalence into valid key, value for params_dict.
-
-    :param line: a str with the equivalence between variable and value + units, written in Brian2 style
-    :return: key - a string
-             value - a tuple containing a num and units, if any
-    """
-    split_line = line.split()
-    # assumes equivalences are separated by white_space, ignore other in-line comments
-    if '=' in split_line[1]:
-        key = split_line[0]
-        value = split_line[2]
-        value = handle_brian_units(value)
-        return key, value
-    else:
-        return
-
-
-def validate_file(filename, extension='.txt'):
-    from os import path
-    if not isinstance(filename, str):
-        raise ValueError("filename must be a string")
-
-    if not filename.endswith(extension):
-        print("Not a valid file. Input {} must be a .txt file.".format(filename))
-        return False
-    elif not path.exists(filename):
-        print("Not a valid file. Path {} does not exists.".format(filename))
-        return False
-    else:
-        return True
-
-
-def read_params(filename='get_params.py'):
-    """
-    Reads params from a text file to a dictionary supported by snep.
-
-    :param filename: a string, the path/filename to the params
-    :return: dictionary with params, where values are instances of Parameter class
-    """
-    from snep.utils import Parameter
-
-    params_default = {}
-    if validate_file(filename):
-        with open(filename, 'r') as f:
-            for line in f.readlines():
-                # ignore commented lines
-                if not line.lstrip().startswith('#'):
-                    key, value = brian2param(line)
-                    params_default[key] = Parameter(*value)
-    return params_default
-
-
-# maybe important, but not yet
-def str2bool(s):
-    if s == 'True':
-        return True
-    elif s == 'False':
-        return False
-    else:
-        raise ValueError("{} not a bool".format(s))
+    save_figure(task_dir, fig, fig_name)
