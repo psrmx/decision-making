@@ -394,6 +394,7 @@ def mk_sen_stimulus(task_info, arrays=False):
 
 
 def get_mean_stim(task_info, tps):
+    """simple way to calculate the stimulus given without the noise"""
     stim_dt = get_this_dt(task_info, tps)
     time = get_this_time(task_info, tps)
     runtime = unitless(task_info['sim']['runtime'], second, as_int=False)
