@@ -168,7 +168,8 @@ def get_stim_params(task_info):
     # adjust external current
     if task_info['sim']['2c_model']:
         paramsen = get_2c_params(task_info)
-        I0 = adjust_variable(I0, paramsen['CmE'], paramsen['Cms'])
+        I0 = 160*pA     # adjust_variable(I0, paramsen['CmE'], paramsen['Cms'])
+        I0_wimmer = I0  # makes sure the variance of the noise is also scaled!
 
     paramstim = {'c': c, 'I0': I0, 'I0_wimmer': I0_wimmer, 'mu1': mu1, 'mu2': mu2,  'tau_stim': tau_stim,
                  'stim_dt': stim_dt, 'sigma_stim': sigma_stim, 'sigma_ind': sigma_ind}
@@ -210,10 +211,3 @@ def get_plasticity_params(task_info):
     paramplastic = {**param_naud, **param_plastic}
 
     return paramplastic
-
-
-def get_burst_params(task_info):
-    # 'validburst': Parameter(16e-3)
-    pass
-
-
