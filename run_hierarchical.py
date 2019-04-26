@@ -23,18 +23,15 @@ def run_hierarchical(task_info, taskdir, tempdir):
 
     # specific imports
     import circuits as cir
-    from burst_analysis import spk_times2neurometric_times, neurometric_times2raster
+    from burst_analysis import spk_mon2spk_times, spk_times2raster
     from helper_funcs import plot_fig1, plot_fig2, plot_fig3, plot_plastic_rasters, plot_isis, choice_selection
     from brian2 import set_device, defaultclock, seed, profiling_summary
     from brian2.core.magic import start_scope
 
-    # simulation parameters
+    # setup simulation
+    set_device('cpp_standalone', directory=tempdir)
     sim_dt = task_info['sim']['sim_dt']
     runtime = task_info['sim']['runtime']
-    smooth_win = task_info['sim']['smooth_win']
-
-    # parallel code and flag to start
-    set_device('cpp_standalone', directory=tempdir)
     defaultclock.dt = sim_dt
 
     # seed to get same network with same synapses
@@ -54,50 +51,52 @@ def run_hierarchical(task_info, taskdir, tempdir):
     net.run(runtime, report='stdout', profile=True)
     print(profiling_summary(net=net, show=10))
 
-    # stim monitor if not TimedArray
     if task_info['sim']['online_stim']:
+        # retrieve stim monitor info
         stim_mon = monitors[2]
         sub = int(stim_mon.source.__len__() / 2)
         stim_time = stim_mon.t_
         stim1 = stim_mon.I[:sub]
         stim2 = stim_mon.I[sub:]
 
-    # allocate variables for results
+    # results
     raw_data = np.zeros(1)
     computed = np.zeros(1)
 
-    # fig1 plot on cluster
-    if task_info['sim']['plt_fig1']:
-        mon2plt = monitors.copy() + [stim1, stim2, stim_time]
-        plot_fig1(mon2plt, smooth_win, taskdir)
-
-        # choice selection
-        raw_data = choice_selection()
-
-    # burst analysis
-    if task_info['sim']['burst_analysis']:
-        spksSE = monitors[0]
-        event_times, burst_times, single_times, spk_times, isis = spk_times2neurometric_times(task_info, spksSE)
-        all_spk_times = [event_times, burst_times, single_times, spk_times]
-        events, bursts, singles, spikes = neurometric_times2raster(task_info, all_spk_times, rate=False)
-        plot_fig2(task_info, events, bursts, spikes, stim1, stim2, stim_time, taskdir)
-        plot_isis(task_info, isis, bursts, events, taskdir)
-        computed = {'events': events, 'bursts': bursts, 'singles': singles, 'spikes': spikes, 'isis': isis}
-
-    # inhibitory plasticity results
     if task_info['sim']['plasticity']:
         spksSE = monitors[0]
         dend_mon = monitors[1]
-        last_muOUd = np.array(dend_mon.muOUd[:, -int(5e3):].mean(axis=1))  # last five seconds
-        event_times, burst_times, single_times, spk_times, isis = spk_times2neurometric_times(task_info, spksSE)
-        all_spk_times = [event_times, burst_times, single_times, spk_times]
-        events, bursts, singles, spikes = neurometric_times2raster(task_info, all_spk_times, rate=True)
+        last_muOUd = np.array(dend_mon.muOUd[:, -int(10e3):-int(5e3)].mean(axis=1))  # last 10:5 seconds
+        all_spk_times, all_isis = spk_mon2spk_times(task_info, spksSE)
+        events, bursts, singles, spikes = spk_times2raster(task_info, all_spk_times, broad_step=True, rate=True)
         plot_fig3(task_info, dend_mon, events, bursts, spikes, taskdir)
-        plot_plastic_rasters(task_info, spk_times, burst_times, bursts, taskdir)
+        plot_plastic_rasters(task_info, all_spk_times[3], all_spk_times[1], bursts, taskdir)
 
-        # prepare results
         raw_data = {'last_muOUd': last_muOUd}
-        computed = {'events': events, 'bursts': bursts, 'singles': singles, 'spikes': spikes, 'isis': isis}
+        computed = {'events': all_spk_times[0], 'bursts': all_spk_times[1], 'singles': all_spk_times[2],
+                    'spikes': all_spk_times[3]}
+
+    else:
+        # choice selection
+        choice_monitors = monitors[1:5]
+        raw_data = choice_selection(task_info, choice_monitors)
+
+        if task_info['sim']['plt_fig1']:
+            mon2plt = monitors.copy() + [stim1, stim2, stim_time]
+            plot_fig1(task_info, mon2plt, taskdir)
+
+        if task_info['sim']['burst_analysis']:
+            spksSE = monitors[0]
+            all_spk_times, all_isis = spk_mon2spk_times(task_info, spksSE)
+            events, bursts, singles, spikes, downsample = spk_times2raster(task_info, all_spk_times,
+                                                                           broad_step=True, downsample=True)
+            plot_fig2(task_info, events, bursts, spikes, stim1, stim2, stim_time, taskdir)
+            plot_isis(task_info, *all_isis, task_dir=taskdir)
+
+            computed = {'events': events, 'bursts': bursts, 'singles': singles, 'spikes': spikes,
+                        'events_low_def': downsample[0], 'bursts_low_def': downsample[1],
+                        'singles_low_def': downsample[2], 'spikes_low_def': downsample[3],
+                        'isis': all_isis[0], 'ieis': all_isis[1], 'ibis': all_isis[2]}
 
     results = {
         'raw_data': raw_data,
@@ -148,33 +147,34 @@ class JobInfoExperiment(Experiment):
             'sim': {
                 'sim_dt': Parameter(0.1, 'ms'),
                 'stim_dt': Parameter(1, 'ms'),
-                'runtime': Parameter(20, 'second'),
-                'settle_time': Parameter(0, 'second'),
-                'stim_on': Parameter(0, 'second'),
-                'stim_off': Parameter(20, 'second'),
+                'runtime': Parameter(3.5, 'second'),
+                'settle_time': Parameter(0.5, 'second'),
+                'stim_on': Parameter(1, 'second'),
+                'stim_off': Parameter(3, 'second'),
                 'replicate_stim': False,
                 'num_method': 'euler',
                 'seed_con': Parameter(1284),
-                'smooth_win': Parameter(100, 'ms'),
+                'smooth_win': Parameter(50, 'ms'),
                 'valid_burst': Parameter(16e-3),
+                'cp_step': 10,
                 '2c_model': True,
                 'plt_fig1': False,
-                'burst_analysis': False,
-                'plasticity': True,
-                'online_stim': True},
+                'burst_analysis': True,
+                'plasticity': False,
+                'online_stim': False},
 
             'plastic': {
                 'tauB': Parameter(50000, 'ms'),
                 'tau_update': Parameter(10, 'ms'),
-                'eta0': Parameter(5, 'pA'),
+                'eta0': Parameter(1, 'pA'),
                 'min_burst_stop': Parameter(0.1),
                 'dec_winner_rate': Parameter(35, 'Hz')}}
 
         param_ranges = {
-            'c': ParameterArray(np.array([0])),
-            'bfb': ParameterArray(np.array([1])),
-            'targetB': ParameterArray(np.array([2]), 'Hz'),  # np.arange(1.5, 4.5, 0.5)
-            # 'iter': ParameterArray(np.arange(0, 4))
+            'c': ParameterArray(np.array([0])),     # np.linspace(-1, 1, 11)
+            'bfb': ParameterArray(np.arange(0, 2)),
+            # 'targetB': ParameterArray(np.arange(1, 5.5, 1), 'Hz'),  # np.arange(1.5, 4.5, 0.5)
+            'iter': ParameterArray(np.arange(0, 2))
         }
 
         # add params to tables
@@ -197,4 +197,5 @@ if __name__ == '__main__':
     job_info = run(JobInfoExperiment, ji_kwargs, username=username, max_tasks=max_tasks, mem_per_task=mem_per_task,
                    max_task_time=max_task_time, poll_interval=poll_interval,
                    result_dir='Documents/WS19/MasterThesis/Experiments',
-                   additional_files=['circuits.py', 'helper_funcs.py', 'burst_analysis.py', 'get_params.py', 'neuron_models.py'])
+                   additional_files=['circuits.py', 'neuron_models.py', 'get_params.py', 'helper_funcs.py',
+                                     'burst_analysis.py', 'choice_analysis.py'])
