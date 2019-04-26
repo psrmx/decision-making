@@ -1,6 +1,6 @@
 import numpy as np
 from brian2.units import second
-from helper_funcs import unitless, handle_downsampled_spks, smooth_rate
+from helper_funcs import unitless, handle_downsampled_spikes, smooth_rate
 
 
 def spk_times2all_spk_times(task_info, mon_spk_times):
@@ -63,7 +63,7 @@ def spk_times2all_spk_times(task_info, mon_spk_times):
     return event_times, burst_times, single_times, spike_times, all_isis
 
 
-def spk_mon2all_spk_times(task_info, spk_mon):
+def spk_mon2spk_times(task_info, spk_mon):
     """Calculates burst, event and single times from SpikeMonitor.spike_times(), following Naud & Sprekeler 2018."""
 
     # params
@@ -127,11 +127,13 @@ def spk_mon2all_spk_times(task_info, spk_mon):
             ibis = np.diff(burst_times[n])
             all_ieis = np.hstack((np.zeros(1), ieis[ieis > 0]*1e3, all_ieis))
             all_ibis = np.hstack((np.zeros(1), ibis[ibis > 0]*1e3, all_ibis))
+    all_isis = (all_isis[all_isis > 0], all_ieis[all_ieis > 0], all_ibis[all_ibis > 0])
+    all_spk_times = (event_times, burst_times, single_times, spike_times)
 
-    return event_times, burst_times, single_times, spike_times, (all_isis, all_ieis, all_ibis)
+    return all_spk_times, all_isis
 
 
-def all_spk_times2raster(task_info, all_spk_times, rate=False, downsample=False):
+def spk_times2raster(task_info, all_spk_times, broad_step=False, rate=False, downsample=False):
     """takes dictionaries of spk_times and transforms them to rasters or rates"""
     from scipy.sparse import lil_matrix
 
@@ -140,7 +142,9 @@ def all_spk_times2raster(task_info, all_spk_times, rate=False, downsample=False)
     sim_dt = unitless(task_info['sim']['sim_dt'], second, as_int=False)
     runtime = unitless(task_info['sim']['runtime'], second, as_int=False)
     settle_time = unitless(task_info['sim']['settle_time'], second, as_int=False)
-    smooth_win = unitless(task_info['sim']['smooth_win'], second, as_int=False) / 2
+    smooth_win = unitless(task_info['sim']['smooth_win'], second, as_int=False)
+    if broad_step:
+        sim_dt = unitless(task_info['sim']['stim_dt'], second, as_int=False)
     tps = unitless(int((runtime - settle_time)), sim_dt)
     nn = max(spk_times, key=int) + 1
 
@@ -153,13 +157,14 @@ def all_spk_times2raster(task_info, all_spk_times, rate=False, downsample=False)
     num_spikes = 0
     for n in spk_times.keys():
         # fill sparse matrix with the proper indices of the newdt
-        events[n, handle_downsampled_spks(np.floor(event_times[n] / sim_dt)).astype(int)] = 1
-        bursts[n, handle_downsampled_spks(np.floor(burst_times[n] / sim_dt)).astype(int)] = 1
-        singles[n, handle_downsampled_spks(np.floor(single_times[n] / sim_dt)).astype(int)] = 1
-        spikes[n, handle_downsampled_spks(np.floor(spk_times[n] / sim_dt)).astype(int)] = 1
+        events[n, handle_downsampled_spikes(np.floor(event_times[n] / sim_dt)).astype(int)] = 1
+        bursts[n, handle_downsampled_spikes(np.floor(burst_times[n] / sim_dt)).astype(int)] = 1
+        singles[n, handle_downsampled_spikes(np.floor(single_times[n] / sim_dt)).astype(int)] = 1
+        spikes[n, handle_downsampled_spikes(np.floor(spk_times[n] / sim_dt)).astype(int)] = 1
         num_spikes += len(spk_times[n])
 
-    assert num_spikes == spikes.toarray().sum(), "Ups, you lost some spikes while creating the rasters."
+    if not broad_step:
+        assert num_spikes == spikes.toarray().sum(), "Ups, you lost some spikes while creating the rasters."
 
     events = events.toarray()
     bursts = bursts.toarray()
@@ -189,10 +194,10 @@ def all_spk_times2raster(task_info, all_spk_times, rate=False, downsample=False)
         idxs = np.linspace(0, (runtime-settle_time)/sim_dt, int((runtime-settle_time)/count_window)+1, dtype=int)
         for i, idx1 in enumerate(idxs[:-1]):
             idx2 = idxs[i+1]
-            events_downsample[:, i] = np.squeeze(events[:, idx1:idx2].sum(axis=1)/count_window)
-            bursts_downsample[:, i] = np.squeeze(bursts[:, idx1:idx2].sum(axis=1)/count_window)
-            singles_downsample[:, i] = np.squeeze(singles[:, idx1:idx2].sum(axis=1)/count_window)
-            spikes_downsample[:, i] = np.squeeze(spikes[:, idx1:idx2].sum(axis=1)/count_window)
+            events_downsample[:, i] = np.squeeze(events[:, idx1:idx2].sum(axis=1) / count_window)
+            bursts_downsample[:, i] = np.squeeze(bursts[:, idx1:idx2].sum(axis=1) / count_window)
+            singles_downsample[:, i] = np.squeeze(singles[:, idx1:idx2].sum(axis=1) / count_window)
+            spikes_downsample[:, i] = np.squeeze(spikes[:, idx1:idx2].sum(axis=1) / count_window)
 
         return events, bursts, singles, spikes, \
                [events_downsample, bursts_downsample, singles_downsample, spikes_downsample]
