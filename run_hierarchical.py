@@ -10,8 +10,8 @@ from snep.experiment import Experiment
 # cluster configuration
 config['cluster'] = config.run_on_cluster()
 username = 'paola'
-max_tasks = 50          # 260 cores in the server
-mem_per_task = 64.      # in GB, do a test with 32 GB then find optimal value
+max_tasks = 110          # 260 cores in the server
+mem_per_task = 20.      # in GB, do a test with 32 GB then find optimal value
 max_task_time = None    # In HH:MM:SS, important if you want to jump ahead queue. For local run: None
 poll_interval = 2.      # in minutes
 
@@ -171,10 +171,10 @@ class JobInfoExperiment(Experiment):
                 'dec_winner_rate': Parameter(35, 'Hz')}}
 
         param_ranges = {
-            'c': ParameterArray(np.array([0])),     # np.linspace(-1, 1, 11)
-            'bfb': ParameterArray(np.arange(0, 2)),
+            'c': ParameterArray(np.linspace(-1, 1, 11)),     # np.linspace(-1, 1, 11)
+            'bfb': ParameterArray(np.array([0])),
             # 'targetB': ParameterArray(np.arange(1, 5.5, 1), 'Hz'),  # np.arange(1.5, 4.5, 0.5)
-            'iter': ParameterArray(np.arange(0, 2))
+            'iter': ParameterArray(np.arange(0, 20))
         }
 
         # add params to tables
