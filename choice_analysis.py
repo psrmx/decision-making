@@ -5,10 +5,9 @@ from circuits import get_mean_stim
 from tqdm import tqdm
 
 load_path = '/Users/PSR/Documents/WS19/MasterThesis/Experiments/run_hierarchical'
-test_expers = ['2019-04-26-15h29m06s', '2019-04-26-15h29m18s']
+test_expers = ['2019-04-27-17h10m10s', '2019-04-26-15h29m18s']
 target_var = 'bfb'
-target_value = 1
-
+target_value = 0
 plt_show = True
 fig_extension = '.png'
 
@@ -50,7 +49,7 @@ def get_average_trials(tables_task_ids):
         spikes_av_per_trial = np.empty((int(2*nn), tps2))
         bursts_av_per_trial = np.empty((int(2*nn), tps2))
         events_av_per_trial = np.empty((int(2*nn), tps2))
-        cp_av_per_trial = np.empty((nn, tps2-step))
+        cp_av_per_trial = np.empty((nn, int(tps2/step)))
 
         for n in tqdm(range(nn)):
             this_n_spikes = np.empty((n_trials, tps2))
@@ -77,11 +76,11 @@ def get_average_trials(tables_task_ids):
 
             # fill average arrays
             spikes_av_per_trial[n] = winner_spikes.mean(axis=0)
-            spikes_av_per_trial[int(2*sub)+n] = loser_spikes.mean(axis=0)
+            spikes_av_per_trial[nn+n] = loser_spikes.mean(axis=0)
             bursts_av_per_trial[n] = winner_bursts.mean(axis=0)
-            bursts_av_per_trial[int(2*sub)+n] = loser_bursts.mean(axis=0)
+            bursts_av_per_trial[nn+n] = loser_bursts.mean(axis=0)
             events_av_per_trial[n] = winner_events.mean(axis=0)
-            events_av_per_trial[int(2*sub)+n] = loser_events.mean(axis=0)
+            events_av_per_trial[nn+n] = loser_events.mean(axis=0)
             cp_av_per_trial[n] = choice_probability(winner_spikes, loser_spikes, step=step)
 
         # figures
@@ -93,7 +92,5 @@ def get_average_trials(tables_task_ids):
 
 if __name__ == '__main__':
     get_average_trials()
-    # explore_data()
 
-# TODO: coherence levels and accuracy!
 # TODO: correlations (?)
