@@ -6,7 +6,7 @@ from helper_funcs import adjust_variable
 def get_dec_params(task_info):
     """Parameters for decision circuit."""
     # local recurrent connections
-    sub = task_info['dec']['sub']           # fraction of stim-selective exc neurons
+    sub = task_info['dec']['sub']       # fraction of stim-selective exc neurons
     w_p = 1.6               # relative synaptic strength within pop D1 and D2
     w_m = 1 - sub*(w_p - 1) / (1 - sub)     # " " across pop D1 and D2
     gEEa = 0.05*nS          # AMPA weight of EE synapses
@@ -20,12 +20,12 @@ def get_dec_params(task_info):
     # external connections
     gXE = 2.1*nS            # weight of XE synapses
     gXI = 1.62*nS           # weight of XI synapses
-    nu_ext = 2400*Hz        # firing rate of ext Poisson input to D1 and D2
-    nu_ext1 = 2392*Hz       # firing rate of ext Poisson input to D3 and DI
+    nu_ext_12 = 2392*Hz     # firing rate of ext Poisson input to D1 and D2
+    nu_ext_3I = 2400*Hz     # firing rate of ext Poisson input to D3 and DI
 
     # neuron models
     CmE = 500*pF            # membrane capacitance of E neurons
-    CmI = 250*pF            # membrane capacitance of I neurons
+    CmI = 200*pF            # membrane capacitance of I neurons
     gleakE = 25*nS          # leak conductance of E neurons
     gleakI = 20*nS          # leak conductance of I neurons
     Vl = -70*mV             # resting potential
@@ -48,7 +48,7 @@ def get_dec_params(task_info):
                 'gXE': gXE, 'gXI': gXI, 'gleakE': gleakE, 'gleakI': gleakI, 'Vl': Vl, 'Vt': Vt, 'Vr': Vr,
                 'VrevE': VrevE, 'VrevI': VrevI, 'tau_refE': tau_refE, 'tau_refI': tau_refI, 'tau_ampa_d': tau_ampa_d,
                 'tau_gaba_d': tau_gaba_d, 'tau_nmda_d': tau_nmda_d, 'tau_nmda_r': tau_nmda_r, 'alpha_nmda': alpha_nmda,
-                'CmE': CmE, 'CmI': CmI, 'nu_ext': nu_ext, 'nu_ext1': nu_ext1, 'd': d}
+                'CmE': CmE, 'CmI': CmI, 'nu_ext_12': nu_ext_12, 'nu_ext_3I': nu_ext_3I, 'd': d}
 
     return paramint
 
