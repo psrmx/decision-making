@@ -19,7 +19,7 @@ def mk_dec_circuit(task_info):
     """
     Creates the 'winner-takes-all' network described in Wang 2002.
 
-    :return: groups, synapses, update_nmda, subgroups
+    :return: groups, synapses, subgroups
     """
     # load params from task_info
     N_E = task_info['dec']['N_E']       # number of exc neurons (1600)
@@ -35,8 +35,8 @@ def mk_dec_circuit(task_info):
 
     # unpack variables
     d = paramdec['d']
-    nu_ext = paramdec['nu_ext']
-    nu_ext1 = paramdec['nu_ext1']
+    nu_ext_12 = paramdec['nu_ext_12']
+    nu_ext_3I = paramdec['nu_ext_3I']
 
     # neuron groups
     decE = NeuronGroup(N_E, model=nm.eqs_wang_exc, method=num_method, threshold='V>=Vt', reset='V=Vr',
@@ -52,8 +52,8 @@ def mk_dec_circuit(task_info):
                        refractory='tau_refI', namespace=paramdec, name='decI')
 
     # weight connections according to different subgroups
-    condsame = '(label_pre == label_post and label_pre != 3)'
-    conddiff = '(label_pre != label_post and label_pre != 3) or (label_pre == 3 and label_post != 3)'
+    condsame = '(label_pre != 3 and label_pre == label_post)'
+    conddiff = '(label_pre != 3 and label_pre != label_post) or (label_pre == 3 and label_post != 3)'
     condrest = '(label_post == 3)'
 
     # NMDA: exc --> exc
@@ -102,9 +102,9 @@ def mk_dec_circuit(task_info):
     synDIDI.w = 'gII/gleakI'
 
     # external inputs
-    extE = PoissonInput(decE[:N_D1 + N_D2], 'g_ea', N=1, rate=nu_ext1, weight='gXE/gleakE')
-    extE3 = PoissonInput(decE3, 'g_ea', N=1, rate=nu_ext, weight='gXE/gleakE')
-    extI = PoissonInput(decI, 'g_ea', N=1, rate=nu_ext, weight='gXI/gleakI')
+    extE = PoissonInput(decE[:N_D1+N_D2], 'g_ea', N=1, rate=nu_ext_12, weight='gXE/gleakE')
+    extE3 = PoissonInput(decE3, 'g_ea', N=1, rate=nu_ext_3I, weight='gXE/gleakE')
+    extI = PoissonInput(decI, 'g_ea', N=1, rate=nu_ext_3I, weight='gXI/gleakI')
 
     # variables to return
     groups = {'DE': decE, 'DI': decI, 'DX': extE, 'DX3': extE3, 'DXI': extI}
@@ -477,30 +477,22 @@ def mk_poisson_fb(task_info, dend1):
 
 
 def init_conds_dec(dec_groups):
-    #dec_groups['DE'].g_ea = '0.01 * rand()'
-    #dec_groups['DI'].g_ea = '0.01 * rand()'
-    dec_groups['DE'].V = '-70*mV + (-50 + 70)*mV * rand()'
-    dec_groups['DI'].V = '-70*mV + (-50 + 70)*mV * rand()'   # '-70*mV + (-50 + 70)*mV * rand()'
+    dec_groups['DE'].V = '-50*mV + 2*mV * rand()'
+    dec_groups['DI'].V = '-50*mV + 2*mV * rand()'
 
     return dec_groups
 
 
 def init_conds_sen(sen_groups, two_comp=False, plastic=False):
     if two_comp:
-        #sen_groups['SE'].g_ea = '0.1 * rand()'
-        #sen_groups['SI'].g_ea = '0.1 * rand()'
-        sen_groups['SE'].V = '-72*mV + 2*mV * rand()'
-        sen_groups['SI'].V = '-72*mV + 2*mV * rand()'
-        # sen_groups['dend'].V_d = '-72*mV + 2*mV*rand()'
-        # sen_groups['dend'].g_ea = '0.1*rand()'
+        sen_groups['SE'].V = '-70*mV + 2*mV * rand()'
+        sen_groups['SI'].V = '-70*mV + 2*mV * rand()'
         if not plastic:
             last_muOUd = np.loadtxt('last_muOUd.csv')
             sen_groups['dend'].muOUd = np.tile(last_muOUd, 2) * amp
     else:
-        sen_groups['SE'].g_ea = '0.1 * rand()'
-        sen_groups['SI'].g_ea = '0.1 * rand()'
-        sen_groups['SE'].V = '-52*mV + 2*mV * rand()'
-        sen_groups['SI'].V = '-52*mV + 2*mV * rand()'
+        sen_groups['SE'].V = '-50*mV + 2*mV * rand()'
+        sen_groups['SI'].V = '-50*mV + 2*mV * rand()'
 
     return sen_groups
 
