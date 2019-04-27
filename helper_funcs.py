@@ -27,16 +27,18 @@ def get_OUstim(n, tau):
     return np.asanyarray(i)
 
 
-def get_this_dt(task_params, tps):
+def get_this_dt(task_params, tps, include_settle_time=False):
     runtime = unitless(task_params['sim']['runtime'], second, as_int=False)
     settle_time = unitless(task_params['sim']['settle_time'], second, as_int=False)
+    if include_settle_time:
+        return np.round(runtime/tps, decimals=4)
     return np.round((runtime - settle_time)/tps, decimals=4)
 
 
 def get_this_time(task_params, tps):
     settle_time = unitless(task_params['sim']['settle_time'], second, as_int=False)
     runtime = unitless(task_params['sim']['runtime'], second, as_int=False)
-    return np.linspace(0, (runtime-settle_time), tps)
+    return np.linspace(0, runtime-settle_time, tps)
 
 
 def handle_downsampled_spikes(spk_times):
@@ -136,12 +138,12 @@ def get_winner_loser_trials(rates, is_winner_pop):
 def choice_probability(winner_trials, loser_trials, step=10):
     """computes CP of a neuron from its spike distributions at each timepoint"""
     tps = winner_trials.shape[1]
-    cp = np.empty(tps-step)     # int(tps/step)
+    cp = np.empty(int(tps/step))
     bins = np.arange(-1, 151)
-    for t in range(tps-step):   # np.linspace(0, tps-step, int(tps/step), dtype=int)
+    for t in np.linspace(0, tps-step, int(tps/step), dtype=int):
         x1, e1 = np.histogram(winner_trials[:, t:t + step], bins=bins, density=True)
         x2, e2 = np.histogram(loser_trials[:, t:t + step], bins=bins, density=True)
-        cp[t] = mtr.auc(np.cumsum(x1), np.cumsum(x2))
+        cp[int(t/step)] = mtr.auc(np.cumsum(x1), np.cumsum(x2))
 
     return cp
 
@@ -162,6 +164,16 @@ def create_inset(axes, data2plt, c, xlim, w=1, h=0.7, nyticks=4):
     plt.xticks(visible=False)
 
     return ax_ins
+
+
+def plot_psychometric(stimuli, winner_pops, task_dir, fig_name):
+    sns.set(context='talk', style='darkgrid')
+    fig = plt.figure(figsize=(4, 3))
+    plt.title('Psychometric curve')
+    plt.plot(stimuli, winner_pops.mean(axis=1), '.-', color='C4', lw=2)
+    plt.xlabel('Coherence level')
+    plt.ylabel('Accuracy')
+    save_figure(task_dir, fig, fig_name)
 
 
 def plot_fig1(task_info, monitors, task_dir):
@@ -253,6 +265,13 @@ def plot_fig2(task_info, events, bursts, spikes, stim1, stim2, stim_time, task_d
     nn, tps = events.shape
     time = get_this_time(task_info, tps)
     new_dt = get_this_dt(task_info, tps)
+    _, stim_tps = stim1.shape
+    if tps != stim_tps:
+        stim_dt = get_this_dt(task_info, stim_tps, include_settle_time=True)
+        settle_time_idx = int(unitless(task_info['sim']['settle_time'], second, as_int=False) / stim_dt)
+        stim1 = stim1[:, settle_time_idx:]
+        stim2 = stim2[:, settle_time_idx:]
+        stim_time = stim_time[:stim1.shape[1]]
     smooth_win = unitless(task_info['sim']['smooth_win'], second, as_int=False)
     sub = int(nn / 2)
 
