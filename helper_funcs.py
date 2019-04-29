@@ -171,6 +171,7 @@ def plot_psychometric(stimuli, winner_pops, task_dir, fig_name):
     fig = plt.figure(figsize=(4, 3))
     plt.title('Psychometric curve')
     plt.plot(stimuli, winner_pops.mean(axis=1), '.-', color='C4', lw=2)
+    plt.xticks(np.linspace(min(stimuli), max(stimuli), 5))
     plt.xlabel('Coherence level')
     plt.ylabel('Accuracy')
     save_figure(task_dir, fig, fig_name)
