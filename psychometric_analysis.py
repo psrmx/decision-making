@@ -3,7 +3,7 @@ from snep.utils import experiment_opener, filter_tasks
 from helper_funcs import plot_psychometric
 
 load_path = '/Users/PSR/Documents/WS19/MasterThesis/Experiments/run_hierarchical'
-test_expers = ['2019-04-27-18h51m59s', '2019-04-29-16h13m54s']
+test_expers = ['2019-04-29-18h06m50s', '2019-04-29-17h40m23s']
 plt_show = True
 fig_extension = '.png'
 
