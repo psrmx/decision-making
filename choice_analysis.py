@@ -1,11 +1,12 @@
 import numpy as np
 from snep.utils import experiment_opener, filter_tasks
-from helper_funcs import plot_pop_averages, plot_fig2, choice_probability, get_winner_loser_trials
+from helper_funcs import plot_pop_averages, plot_fig2, get_winner_loser_trials, instantaneous_rate, choice_probability
 from circuits import get_mean_stim
 from tqdm import tqdm
+import pickle
 
 load_path = '/Users/PSR/Documents/WS19/MasterThesis/Experiments/run_hierarchical'
-test_expers = ['2019-04-27-17h10m10s', '2019-04-26-15h29m18s']
+test_expers = ['2019-04-27-18h51m59s', '2019-04-29-16h13m54s']
 target_var = 'bfb'
 target_value = 0
 plt_show = True
@@ -30,7 +31,7 @@ def get_average_trials(tables_task_ids):
         tables, task_ids = tables_task_ids[test]
         assert isinstance(tables, ExperimentTables)  # This allows PyCharm to autocomplete method names for tables
         task_dir = load_path + '/' + str(test)
-        fig_name = test_expers[t] + '_' + target_var + str(target_value) + fig_extension
+        fig_name = test_expers[t] + '_' + target_var + str(target_value)
         params = tables.get_general_params(True)
         param_ranges = tables.read_param_ranges()
 
@@ -41,20 +42,20 @@ def get_average_trials(tables_task_ids):
         # params and allocate variables
         n_trials = len(target_ids)
         pops, tps1 = tables.get_raw_data(target_ids[0], 'rates_dec').shape
-        rates_dec = np.empty((n_trials, pops, tps1))
-        rates_sen = np.empty((n_trials, pops, tps1))
+        rates_dec = np.empty((n_trials, pops, tps1), dtype='float32')
+        rates_sen = np.empty((n_trials, pops, tps1), dtype='float32')
         nn, tps2 = tables.get_computed(target_ids[0], 'spikes').shape
         sub = int(nn/2)
         step = params['sim']['cp_step']
-        spikes_av_per_trial = np.empty((int(2*nn), tps2))
-        bursts_av_per_trial = np.empty((int(2*nn), tps2))
-        events_av_per_trial = np.empty((int(2*nn), tps2))
-        cp_av_per_trial = np.empty((nn, int(tps2/step)))
+        spikes_av_per_trial = np.empty((int(2*nn), tps2), dtype='float32')
+        bursts_av_per_trial = np.empty((int(2*nn), tps2), dtype='float32')
+        events_av_per_trial = np.empty((int(2*nn), tps2), dtype='float32')
+        cp_av_per_trial = np.empty((nn, int(tps2/step)), dtype='float32')
 
         for n in tqdm(range(nn)):
-            this_n_spikes = np.empty((n_trials, tps2))
-            this_n_bursts = np.empty((n_trials, tps2))
-            this_n_events = np.empty((n_trials, tps2))
+            this_n_spikes = np.empty((n_trials, tps2), dtype='float32')
+            this_n_bursts = np.empty((n_trials, tps2), dtype='float32')
+            this_n_events = np.empty((n_trials, tps2), dtype='float32')
             is_winner_pop = np.zeros(n_trials, dtype=bool)
 
             for i, tid in enumerate(target_ids):
@@ -81,13 +82,22 @@ def get_average_trials(tables_task_ids):
             bursts_av_per_trial[nn+n] = loser_bursts.mean(axis=0)
             events_av_per_trial[n] = winner_events.mean(axis=0)
             events_av_per_trial[nn+n] = loser_events.mean(axis=0)
-            cp_av_per_trial[n] = choice_probability(winner_spikes, loser_spikes, step=step)
+
+            # instantaneous rates and cps
+            winner_rates = instantaneous_rate(params, winner_spikes)
+            loser_rates = instantaneous_rate(params, loser_spikes)
+            cp_av_per_trial[n] = choice_probability(winner_rates, loser_rates, step=step)
 
         # figures
         mean_stim, stim_time = get_mean_stim(params, tps2)
         plot_pop_averages(params, rates_dec, rates_sen, cp_av_per_trial, task_dir, '/fig1_'+fig_name)
         plot_fig2(params, events_av_per_trial, bursts_av_per_trial, spikes_av_per_trial,
                   mean_stim, mean_stim, stim_time, task_dir, '/fig2_'+fig_name)
+
+        # save variables
+        file_name = fig_name.replace(fig_extension, '-CPs.pkl')
+        with open(file_name, 'wb') as f:
+                pickle.dump([cp_av_per_trial], f)
 
 
 if __name__ == '__main__':
