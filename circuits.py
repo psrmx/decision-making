@@ -8,11 +8,11 @@
 import numpy as np
 import neuron_models as nm
 import get_params as params
+from helper_funcs import get_OUstim, unitless, get_this_dt, get_this_time
 from brian2 import PoissonGroup, PoissonInput, linked_var, TimedArray, seed, Network
 from brian2.groups import NeuronGroup
 from brian2.synapses import Synapses
 from brian2.units import amp, second
-from helper_funcs import get_OUstim, unitless, get_this_dt, get_this_time
 
 
 def mk_dec_circuit(task_info):
@@ -533,7 +533,7 @@ def mk_monitors(task_info, dec_groups, sen_groups, dec_subgroups, sen_subgroups)
 
 def mk_monitors_plastic(task_info, sen_groups, sen_subgroups):
     """Define monitors to track results from plasticity experiment."""
-    from brian2.monitors import SpikeMonitor, StateMonitor
+    from brian2.monitors import SpikeMonitor, StateMonitor, PopulationRateMonitor
 
     # unpack neuron groups
     senE = sen_groups['SE']
@@ -543,9 +543,11 @@ def mk_monitors_plastic(task_info, sen_groups, sen_subgroups):
     stim_dt = task_info['sim']['stim_dt']
     spksSE = SpikeMonitor(senE)
     dend_mon = StateMonitor(dend1, variables=['muOUd', 'Ibg', 'g_ea', 'B'], record=True, dt=stim_dt)
+    spks_dend = SpikeMonitor(dend1)
+    pop_dend = PopulationRateMonitor(dend1)
     online_stim_mon = StateMonitor(senE, variables=['I'], record=True, dt=stim_dt)
 
-    return [spksSE, dend_mon, online_stim_mon]
+    return [spksSE, dend_mon, online_stim_mon, spks_dend, pop_dend]
 
 
 def get_hierarchical_net(task_info):
