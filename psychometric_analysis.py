@@ -1,6 +1,7 @@
 import numpy as np
 from snep.utils import experiment_opener, filter_tasks
 from helper_funcs import plot_psychometric
+import pickle
 
 load_path = '/Users/PSR/Documents/WS19/MasterThesis/Experiments/run_hierarchical'
 test_expers = ['2019-04-29-18h06m50s', '2019-04-29-17h40m23s']
@@ -43,7 +44,11 @@ def get_psychometric(tables_task_ids):
             for i, tid in enumerate(target_ids):
                 winner_pops[c, i] = np.logical_not(tables.get_raw_data(tid, 'winner_pop')[0])
 
+        # figures and save data
         plot_psychometric(c_ranges, winner_pops, task_dir, fig_name)
+        file_name = fig_name.replace(fig_extension, '-accuracy.pkl')
+        with open(file_name, 'wb'), as f:
+            pickle.dump([c_ranges, winner_pops])
 
 
 if __name__ == '__main__':
