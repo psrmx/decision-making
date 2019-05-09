@@ -6,11 +6,12 @@ mlp.use('agg')
 
 from snep.configuration import config
 from snep.experiment import Experiment
+from helper_funcs import np_array
 
 # cluster configuration
 config['cluster'] = config.run_on_cluster()
 username = 'paola'
-max_tasks = 110          # 260 cores in the server
+max_tasks = 50          # 260 cores in the server
 mem_per_task = 20.      # in GB, do a test with 32 GB then find optimal value
 max_task_time = None    # In HH:MM:SS, important if you want to jump ahead queue. For local run: None
 poll_interval = 2.      # in minutes
@@ -24,12 +25,13 @@ def run_hierarchical(task_info, taskdir, tempdir):
     # specific imports
     import circuits as cir
     from burst_analysis import spk_mon2spk_times, spk_times2raster
-    from helper_funcs import plot_fig1, plot_fig2, plot_fig3, plot_plastic_rasters, plot_isis, choice_selection
-    from brian2 import set_device, defaultclock, seed, profiling_summary
+    from helper_funcs import plot_fig1, plot_fig2, plot_fig3, plot_plastic_rasters, plot_isis, choice_selection, plot_plastic_check
+    from brian2 import set_device, defaultclock, seed, profiling_summary, prefs
     from brian2.core.magic import start_scope
 
     # setup simulation
     set_device('cpp_standalone', directory=tempdir)
+    prefs.core.default_float_dtype = np.float32
     sim_dt = task_info['sim']['sim_dt']
     runtime = task_info['sim']['runtime']
     defaultclock.dt = sim_dt
@@ -40,6 +42,7 @@ def run_hierarchical(task_info, taskdir, tempdir):
     print('Creating network...')
 
     if task_info['sim']['plasticity']:
+        # task_info['sim']['smooth_win'] *= 10
         net, monitors = cir.get_plasticity_net(task_info)
     else:
         net, monitors = cir.get_hierarchical_net(task_info)
@@ -60,17 +63,20 @@ def run_hierarchical(task_info, taskdir, tempdir):
         stim2 = stim_mon.I[sub:]
 
     # results
-    raw_data = np.zeros(1)
-    computed = np.zeros(1)
+    raw_data = np.zeros(1, dtype=np.float32)
+    computed = np.zeros(1, dtype=np.float32)
 
     if task_info['sim']['plasticity']:
         spksSE = monitors[0]
         dend_mon = monitors[1]
-        last_muOUd = np.array(dend_mon.muOUd[:, -int(10e3):-int(5e3)].mean(axis=1))  # last 10:5 seconds
-        all_spk_times, all_isis = spk_mon2spk_times(task_info, spksSE)
+        spks_dend = monitors[-2]
+        pop_dend = monitors[-1]
+        last_muOUd = np_array(dend_mon.muOUd[:, -int(10e3):-int(5e3)].mean(axis=1))  # last 10:5 sec
+        all_spk_times, _ = spk_mon2spk_times(task_info, spksSE)
         events, bursts, singles, spikes = spk_times2raster(task_info, all_spk_times, broad_step=True, rate=True)
-        plot_fig3(task_info, dend_mon, events, bursts, spikes, taskdir)
+        plot_fig3(task_info, dend_mon, events, bursts, spikes, pop_dend, taskdir)
         plot_plastic_rasters(task_info, all_spk_times[3], all_spk_times[1], bursts, taskdir)
+        plot_plastic_check(task_info, pop_dend, spks_dend, bursts, all_spk_times[1], taskdir)
 
         raw_data = {'last_muOUd': last_muOUd}
         computed = {'events': all_spk_times[0], 'bursts': all_spk_times[1], 'singles': all_spk_times[2],
@@ -96,11 +102,12 @@ def run_hierarchical(task_info, taskdir, tempdir):
             computed = {'events': events, 'bursts': bursts, 'singles': singles, 'spikes': spikes,
                         'events_low_def': downsample[0], 'bursts_low_def': downsample[1],
                         'singles_low_def': downsample[2], 'spikes_low_def': downsample[3],
-                        'isis': all_isis[0], 'ieis': all_isis[1], 'ibis': all_isis[2]}
+                        'isis': all_isis[0], 'ieis': all_isis[1], 'ibis': all_isis[2],
+                        'cvs': all_isis[3], 'spks_per_burst': all_isis[4]}
 
     results = {
         'raw_data': raw_data,
-        'sim_state': np.zeros(1),
+        'sim_state': np.zeros(1, dtype=np.float32),
         'computed': computed}
 
     return results
@@ -147,17 +154,17 @@ class JobInfoExperiment(Experiment):
             'sim': {
                 'sim_dt': Parameter(0.1, 'ms'),
                 'stim_dt': Parameter(1, 'ms'),
-                'runtime': Parameter(3.5, 'second'),
-                'settle_time': Parameter(0.5, 'second'),
+                'runtime': Parameter(25, 'second'),
+                'settle_time': Parameter(0, 'second'),
                 'stim_on': Parameter(1, 'second'),
-                'stim_off': Parameter(3, 'second'),
+                'stim_off': Parameter(25, 'second'),
                 'replicate_stim': False,
                 'num_method': 'euler',
                 'seed_con': Parameter(1284),
-                'smooth_win': Parameter(50, 'ms'),
+                'smooth_win': Parameter(1000, 'ms'),
                 'valid_burst': Parameter(16e-3),
                 'cp_step': 10,
-                '2c_model': True,
+                '2c_model': False,
                 'plt_fig1': False,
                 'burst_analysis': True,
                 'plasticity': False,
@@ -168,13 +175,13 @@ class JobInfoExperiment(Experiment):
                 'tau_update': Parameter(10, 'ms'),
                 'eta0': Parameter(1, 'pA'),
                 'min_burst_stop': Parameter(0.1),
-                'dec_winner_rate': Parameter(35, 'Hz')}}
+                'dec_winner_rate': Parameter(50, 'Hz')}}
 
         param_ranges = {
-            'c': ParameterArray(np.linspace(-1, 1, 11)),     # np.linspace(-1, 1, 11)
-            'bfb': ParameterArray(np.array([0])),
-            # 'targetB': ParameterArray(np.arange(1, 5.5, 1), 'Hz'),  # np.arange(1.5, 4.5, 0.5)
-            'iter': ParameterArray(np.arange(0, 20))
+            'c': ParameterArray(np_array([0])),     # np.linspace(-1, 1, 11)
+            'bfb': ParameterArray(np_array([1])),
+            'targetB': ParameterArray(np_array([2]), 'Hz'),  # np.arange(1.5, 4.5, 0.5)
+            'iter': ParameterArray(np.arange(0, 1))
         }
 
         # add params to tables
