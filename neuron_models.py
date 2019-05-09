@@ -29,6 +29,7 @@ eqs_naud_soma = '''
     dg_i/dt = (-g_i + x_i) / tau_d          : 1
     dx_i/dt = -x_i / tau_r                  : 1
     dw_s/dt = -w_s / tau_ws                 : amp
+    # dIbg/dt = (muOUs - Ibg) / tauOU + (sigmaOU * xi) / sqrt(tauOU / 2)  : amp
     tau = taus      : second
     Cm = Cms        : farad
     V_d             : volt (linked)
@@ -51,12 +52,6 @@ eqs_plasticity = '''
     dB/dt = -B / tauB                               : 1
     dburst_start/dt = -burst_start / tau_burst      : 1 (unless refractory)
     dburst_stop/dt = -burst_stop / tau_burst        : 1
-'''
-
-eqs_plasticity_linked = '''
-    muOUd           : amp (linked)
-    burst_start     : 1 (linked)
-    burst_stop      : 1 (linked)
 '''
 
 # Sensory stimulus group

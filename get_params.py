@@ -126,6 +126,7 @@ def get_2c_params(task_info):
     # external/background noise
     muOUs = 70*pA           # drift of OU for soma
     sigmaOU = 450*pA        # diffusion of OU process
+    # sigmaOU = 0 * pA  # diffusion of OU process
     tauOU = 2*ms            # timescale of OU process
 
     # synapse models
@@ -142,9 +143,9 @@ def get_2c_params(task_info):
     paramsen = {**param_wimmer, **param_naud}
 
     # re-adjust synaptic conductance
-    for gx in ['gEE', 'gIE']:   #, 'gXE']:
+    for gx in ['gEE', 'gIE']:   # , 'gXE']:
         paramsen[gx] = adjust_variable(param_wimmer[gx], param_wimmer['gleakE'], gleakEs)
-    paramsen['gXE'] = 2.17*nS
+    paramsen['gXE'] = 2.31*nS   # scaled: 2.527, lower_bound: 2.17
 
     return paramsen
 
@@ -155,21 +156,21 @@ def get_stim_params(task_info):
         c = task_info['c']      # stim coherence (between 0 and 1)
     except KeyError:
         c = 0
-    I0 = 80 * pA                # mean input current for zero-coherence stim
+    I0 = 80*pA                  # mean input current for zero-coherence stim. prev: 80*pA
     I0_wimmer = I0
     mu1 = 0.25                  # av. additional input current to pop1 at highest coherence
     mu2 = -0.25                 # av. additional input current to pop2 at highest coherence
     sigma = 1                   # amplitude of temporal modulations of stim
-    sigma_stim = 0.212 * sigma  # std of modulations of stim inputs
-    sigma_ind = 0.212 * sigma   # std of modulations in individual inputs
+    sigma_stim = 0.212*sigma    # std of modulations of stim inputs
+    sigma_ind = 0.212*sigma     # std of modulations in individual inputs
     tau_stim = 20*ms            # correlation time constant of OU process
     stim_dt = task_info['sim']['stim_dt']  # integration step of stimulus
 
     # adjust external current
     if task_info['sim']['2c_model']:
         paramsen = get_2c_params(task_info)
-        I0 = 160*pA     # adjust_variable(I0, paramsen['CmE'], paramsen['Cms'])
-        I0_wimmer = I0  # makes sure the variance of the noise is also scaled!
+        I0 = adjust_variable(I0, paramsen['CmE'], paramsen['Cms'])  # 160*pA
+        # I0_wimmer = I0  # makes sure the variance of the noise is also scaled!
 
     paramstim = {'c': c, 'I0': I0, 'I0_wimmer': I0_wimmer, 'mu1': mu1, 'mu2': mu2,  'tau_stim': tau_stim,
                  'stim_dt': stim_dt, 'sigma_stim': sigma_stim, 'sigma_ind': sigma_ind}

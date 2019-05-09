@@ -193,19 +193,17 @@ def mk_sen_circuit_plastic(task_info):
 
     # equations
     if task_info['sim']['online_stim']:
-        eqs_soma_plastic = nm.eqs_naud_soma + nm.eqs_stim_linked + nm.eqs_plasticity_linked
+        eqs_soma_plastic = nm.eqs_naud_soma + nm.eqs_stim_linked
         paramstim = params.get_stim_params(task_info)
         paramplastic = {**paramplastic, **paramstim}
     else:
-        eqs_soma_plastic = nm.eqs_naud_soma + nm.eqs_stim_array + nm.eqs_plasticity_linked
+        eqs_soma_plastic = nm.eqs_naud_soma + nm.eqs_stim_array
 
     # neuron groups
     eqs_dend_plastic = nm.eqs_naud_dend + nm.eqs_plasticity
     senE = NeuronGroup(N_E, model=eqs_soma_plastic, method=num_method, threshold='V>=Vt',
                        reset='''V = Vl
-                                w_s += bws
-                                burst_start += 1
-                                burst_stop = 1''',
+                                w_s += bws''',
                        refractory='tau_refE', namespace=paramplastic, name='senE')
     dend = NeuronGroup(N_E, model=eqs_dend_plastic, method=num_method, threshold='burst_start > 1 + min_burst_stop',
                        reset='''B += 1
@@ -223,10 +221,15 @@ def mk_sen_circuit_plastic(task_info):
 
     # linked variables
     senE.V_d = linked_var(dend, 'V_d')
-    senE.burst_start = linked_var(dend, 'burst_start')
-    senE.burst_stop = linked_var(dend, 'burst_stop')
-    senE.muOUd = linked_var(dend, 'muOUd')
     dend.lastspike_soma = linked_var(senE, 'lastspike')
+
+    # soma-dendrite synapse
+    syn_burst_trace = Synapses(senE, dend, method=num_method, on_pre='''burst_start +=1
+                                                                        burst_stop = 1''',
+                               namespace=paramplastic, name='syn_burst_trace')
+    syn_burst_trace.connect(j='i')
+
+    # stim
     if task_info['sim']['online_stim']:
         stim_dt = paramstim['stim_dt']
         stim_common = NeuronGroup(2, model=nm.eqs_stim_common, method=num_method,
@@ -241,8 +244,8 @@ def mk_sen_circuit_plastic(task_info):
         senE.I = linked_var(stimE, 'I')
 
     # update rule
-    dend1.muOUd = '-95*pA - rand()*10*pA'  # random initialisation in [-105:-95 pA]
-    dend1.run_regularly('muOUd = clip(muOUd - eta * (B - B0), -100*amp, 0)', dt=tau_update)     # , when='end')
+    dend1.muOUd = 0*amp     #'-95*pA - rand()*10*pA'  # random initialisation in [-105:-95 pA], 0*amp
+    dend1.run_regularly('muOUd = clip(muOUd - eta * (B - B0), -100*amp, 0)', dt=tau_update)
 
     # connections
     sen_synapses = mk_sen_synapses(task_info, senE, senI, extS, paramplastic)
@@ -252,7 +255,7 @@ def mk_sen_circuit_plastic(task_info):
     groups = {'SE': senE, 'dend': dend, 'SI': senI, 'SX': extS, 'DX': extD1}
     subgroups = {'SE1': senE1, 'SE2': senE2,
                  'dend1': dend1, 'dend2': dend2}
-    synapses = {**sen_synapses, **{'synDXdend': synDXdend1}}
+    synapses = {**sen_synapses, **{'synDXdend': synDXdend1, 'syn_burst_trace': syn_burst_trace}}
 
     if task_info['sim']['online_stim']:
         groups = {**groups, **{'stim_common': stim_common, 'stimE': stimE}}
@@ -381,13 +384,17 @@ def mk_sen_stimulus(task_info, arrays=False):
         # stim2TimedArray with zero padding if necessary
         i1 = I0 + I0_wimmer * (c * mu1 + sigma_stim * z1 + sigma_ind * zk1)
         i2 = I0 + I0_wimmer * (c * mu2 + sigma_stim * z2 + sigma_ind * zk2)
-        i1t = np.concatenate((np.zeros((stim_on, nn)), i1.T, np.zeros((runtime - stim_off, nn))), axis=0)
-        i2t = np.concatenate((np.zeros((stim_on, nn)), i2.T, np.zeros((runtime - stim_off, nn))), axis=0)
+        stim1 = i1.T.astype(np.float32)
+        stim2 = i2.T.astype(np.float32)
+        i1t = np.concatenate((np.zeros((stim_on, nn), dtype=np.float32), stim1,
+                              np.zeros((runtime - stim_off, nn), dtype=np.float32)), axis=0).astype(np.float32)
+        i2t = np.concatenate((np.zeros((stim_on, nn), dtype=np.float32), stim2,
+                              np.zeros((runtime - stim_off, nn), dtype=np.float32)), axis=0).astype(np.float32)
         Irec = TimedArray(np.concatenate((i1t, i2t), axis=1)*amp, dt=stim_dt)
 
         if arrays:
-            stim1 = i1t.T
-            stim2 = i2t.T
+            stim1 = i1t.T.astype(np.float32)
+            stim2 = i2t.T.astype(np.float32)
             return Irec, stim1, stim2, stim_time
 
         return Irec
@@ -397,14 +404,14 @@ def get_mean_stim(task_info, tps):
     """simple way to calculate the stimulus given without the noise"""
     stim_dt = get_this_dt(task_info, tps)
     time = get_this_time(task_info, tps)
-    runtime = unitless(task_info['sim']['runtime'], second, as_int=False)
     settle_time = unitless(task_info['sim']['settle_time'], second, as_int=False)
+    runtime = (unitless(task_info['sim']['runtime'], second, as_int=False) - settle_time) / stim_dt
     stim_on_idx = (unitless(task_info['sim']['stim_on'], second, as_int=False) - settle_time) / stim_dt
     stim_off_idx = (unitless(task_info['sim']['stim_off'], second, as_int=False) - settle_time) / stim_dt
     I0 = params.get_stim_params(task_info)['I0']
     stim = np.concatenate((np.zeros((2, int(stim_on_idx))),
                           np.ones((2, int(stim_off_idx-stim_on_idx)))*I0,
-                          np.zeros((2, int((runtime/stim_dt)-stim_off_idx)))), axis=1)
+                          np.zeros((2, int(runtime-stim_off_idx)))), axis=1)
 
     return stim, time
 
