@@ -1,10 +1,12 @@
 import numpy as np
 from scipy.signal import lfilter
-from brian2.units import second, Hz, pA, ms
+from brian2.units import second, Hz, pA, ms, nS, mV
 from brian2tools import plot_raster
 from sklearn import metrics as mtr
 import matplotlib.pyplot as plt
 import seaborn as sns
+
+cntxt = 'notebook'
 
 
 def adjust_variable(var_prev, cm_prev, cm_new):
@@ -125,11 +127,13 @@ def choice_selection(task_info, monitors, downsample_step=10):
     return choice_data
 
 
-def reorder_winner_pop(pop_array):
+def reorder_winner_pop(pop_array, stack=False):
     """case when second half of neurons belong to winner population"""
     sub = int(pop_array.shape[0] / 2)
     if sub > 1:
         pop_array = np_array([pop_array[sub:], pop_array[:sub]])
+        if stack:
+            return np.vstack((pop_array[0], pop_array[1]))
         return pop_array
     return np_array([pop_array[1], pop_array[0]])
 
@@ -194,7 +198,7 @@ def save_figure(task_dir, fig, fig_name, tight=True):
 
 
 def plot_psychometric(stimuli, winner_pops, task_dir, fig_name):
-    sns.set(context='talk', style='darkgrid')
+    sns.set(context=cntxt, style='darkgrid')
 
     fig = plt.figure(figsize=(4, 3))
     plt.title('Psychometric curve')
@@ -206,7 +210,7 @@ def plot_psychometric(stimuli, winner_pops, task_dir, fig_name):
 
 
 def plot_fig1(task_info, monitors, task_dir):
-    sns.set(context='talk', style='darkgrid')
+    sns.set(context=cntxt, style='darkgrid')
     settle_time = unitless(task_info['sim']['settle_time'], second, as_int=False)
     runtime = unitless(task_info['sim']['runtime'], second, as_int=False)
     smooth_win = task_info['sim']['smooth_win']
@@ -214,8 +218,9 @@ def plot_fig1(task_info, monitors, task_dir):
     subDE = int(spksDE.source.__len__() / 2)
     subSE = int(spksSE.source.__len__() / 2)
     nticks = 4
+    nrows, ncols = (7, 1)
 
-    fig1, axs = plt.subplots(7, 1, figsize=(8, 15), sharex=True)
+    fig1, axs = plt.subplots(nrows, ncols, figsize=(int(8 * ncols), int(2 * nrows)), dpi=100, sharex=True)
     fig1.add_axes(axs[0])
     plt.title('Decision circuit')
     spksDE2 = spksDE.i >= subDE
@@ -236,8 +241,8 @@ def plot_fig1(task_info, monitors, task_dir):
     pos = axs[2].get_position()
     axs[2].set_position([pos.x0, pos.y0 + .02, pos.width, pos.height])
     axs[2].plot(rateDI.t, rateDI.smooth_rate(window='flat', width=smooth_win), color='C4', lw=1, label='inh')
-    axs[2].plot(rateDE1.t, rateDE1.smooth_rate(window='flat', width=smooth_win), color='C3', lw=1.5, label='exc1')
-    axs[2].plot(rateDE2.t, rateDE2.smooth_rate(window='flat', width=smooth_win), color='C0', lw=1.5, label='exc2')
+    axs[2].plot(rateDE1.t, rateDE1.smooth_rate(window='flat', width=smooth_win), color='C3', lw=1.5, label='E1')
+    axs[2].plot(rateDE2.t, rateDE2.smooth_rate(window='flat', width=smooth_win), color='C0', lw=1.5, label='E2')
     plt.ylabel(r"$Rate$ (sp/s)")
     plt.ylim(0, 50)
     plt.yticks(np.arange(0, 55, 20))
@@ -262,8 +267,8 @@ def plot_fig1(task_info, monitors, task_dir):
     pos = axs[5].get_position()
     axs[5].set_position([pos.x0, pos.y0 + .02, pos.width, pos.height])
     axs[5].plot(rateSI.t, rateSI.smooth_rate(window='flat', width=smooth_win), color='C4', lw=1, label='inh')
-    axs[5].plot(rateSE1.t, rateSE1.smooth_rate(window='flat', width=smooth_win), color='C3', lw=1.5, label='exc1')
-    axs[5].plot(rateSE2.t, rateSE2.smooth_rate(window='flat', width=smooth_win), color='C0', lw=1.5, label='exc2')
+    axs[5].plot(rateSE1.t, rateSE1.smooth_rate(window='flat', width=smooth_win), color='C3', lw=1.5, label='E1')
+    axs[5].plot(rateSE2.t, rateSE2.smooth_rate(window='flat', width=smooth_win), color='C0', lw=1.5, label='E2')
     plt.ylabel(r"$Rate$ (sp/s)")
     plt.ylim(0, 30)
     plt.yticks(np.arange(0, 30, 10))
@@ -281,9 +286,12 @@ def plot_fig1(task_info, monitors, task_dir):
     save_figure(task_dir, fig1, '/figure1.png', tight=False)
 
 
-def plot_fig2(task_info, events, bursts, spikes, stim1, stim2, stim_time, task_dir, fig_name='/figure2.png'):
-    sns.set(context='talk', style='darkgrid')
+def plot_fig2(task_info, events, bursts, spikes, stim1, stim2, stim_time, rate_winner, rate_loser, winner_pop, task_dir, fig_name='/figure2.png'):
+    sns.set(context=cntxt, style='darkgrid')
+
     nn, tps = events.shape
+    sub = int(nn / 2)
+    smooth_win = unitless(task_info['sim']['smooth_win'], second, as_int=False)
     time = get_this_time(task_info, tps)
     new_dt = get_this_dt(task_info, tps)
     _, stim_tps = stim1.shape
@@ -293,51 +301,69 @@ def plot_fig2(task_info, events, bursts, spikes, stim1, stim2, stim_time, task_d
         stim1 = stim1[:, settle_time_idx:]
         stim2 = stim2[:, settle_time_idx:]
         stim_time = stim_time[:stim1.shape[1]]
-    smooth_win = unitless(task_info['sim']['smooth_win'], second, as_int=False)
-    sub = int(nn / 2)
+    tps2 = rate_winner.shape[0]
+    time2 = get_this_time(task_info, tps2)
+    n_dec = task_info['dec']['N_E'] * task_info['dec']['sub']
+    b_fb = task_info['bfb']
+    gleak = 24.2857*nS
+    g = (0.004*b_fb*gleak)
+    v_dend = 73*mV
+    stim = np.array([stim1.mean(axis=0), stim2.mean(axis=0)])
+    if winner_pop:
+        events = reorder_winner_pop(events, stack=True)
+        bursts = reorder_winner_pop(bursts, stack=True)
+        spikes = reorder_winner_pop(spikes, stack=True)
+        stim = reorder_winner_pop(stim)
+    nrows, ncols = (3, 2)
 
-    fig2, axs = plt.subplots(5, 2, figsize=(16, 10), sharex=True, sharey='row')
-    axs[0, 0].plot(stim_time, stim1.mean(axis=0)*1e12, color='C3', lw=1.5)
-    axs[0, 0].set_title('Sensory population 1')
+    fig2, axs = plt.subplots(nrows, ncols, figsize=(int(8 * ncols), int(2 * nrows)), dpi=100, sharex=True)
+    axs[0, 0].plot(stim_time, stim[0]*1e12, color='C3', lw=1, label='winner')
+    axs[0, 0].plot(stim_time, stim[1]*1e12, color='C0', lw=1, label='loser')
     axs[0, 0].set_ylabel(r'$I_{soma}$ (pA)')
     axs[0, 0].set_xlim(time[0], time[-1])
-    axs[0, 1].plot(stim_time, stim2.mean(axis=0)*1e12, color='C0', lw=1.5)
-    axs[0, 1].set_title('Sensory population 2')
 
     f_rate1, f_rate2 = smooth_rate(spikes, smooth_win, new_dt, sub)
-    axs[1, 0].plot(time, f_rate1, lw=1.5, color='C5')
+    axs[1, 0].plot(time, f_rate1, lw=1, color='C5', label='winner')
+    axs[1, 0].plot(time, f_rate2, lw=1, color='gray', label='loser')
     axs[1, 0].set_ylabel(r'$A$ (Hz)')
-    axs[1, 0].set_ylim(0, 25)
-    axs[1, 1].plot(time, f_rate2, lw=1.5, color='C5')
-
-    b_rate1, b_rate2 = smooth_rate(bursts, smooth_win, new_dt, sub)
-    axs[2, 0].plot(time, b_rate1, lw=1.5, color='C1')
-    axs[2, 0].set_ylabel(r'$B$ (Hz)')
-    axs[2, 0].set_ylim(0, 6)
-    axs[2, 1].plot(time, b_rate2, lw=1.5, color='C1')
+    axs[1, 0].set_ylim(0, 30)
 
     e_rate1, e_rate2 = smooth_rate(events, smooth_win, new_dt, sub)
-    axs[4, 0].plot(time, e_rate1, lw=1.5, color='C2')
-    axs[4, 0].set_ylabel(r'$E$ (Hz)')
-    axs[4, 0].set_ylim(0, 15)
-    axs[4, 0].set_xlabel(r'$Time$ (s)')
-    axs[4, 1].plot(time, e_rate2, lw=1.5, color='C2')
-    axs[4, 1].set_xlabel(r'$Time$ (s)')
+    axs[2, 0].plot(time, e_rate1, lw=1, color='C2', label='winner')
+    axs[2, 0].plot(time, e_rate2, lw=1, color='gray', label='loser')
+    axs[2, 0].set_ylabel(r'$E$ (Hz)')
+    axs[2, 0].set_xlabel(r'$Time$ (s)')
+    axs[2, 0].set_ylim(0, 25)
+
+    top_down1 = n_dec * 0.2 * rate_winner * (1*ms) * g * v_dend
+    top_down2 = n_dec * 0.2 * rate_loser * (1*ms) * g * v_dend
+    axs[0, 1].plot(time2, top_down1/pA, color='C3', lw=1, label='winner')
+    axs[0, 1].plot(time2, top_down2/pA, color='C0', lw=1, label='loser')
+    axs[0, 1].set_ylabel(r'$I_{top-down}$ (pA)')
+
+    b_rate1, b_rate2 = smooth_rate(bursts, smooth_win, new_dt, sub)
+    axs[1, 1].plot(time, b_rate1, lw=1, color='C1', label='winner')
+    axs[1, 1].plot(time, b_rate2, lw=1, color='gray', label='loser')
+    axs[1, 1].set_ylabel(r'$B$ (Hz)')
+    axs[1, 1].set_ylim(0, 4)
 
     bfracc1 = b_rate1 / e_rate1
     bfracc1[np.isnan(bfracc1)] = 0  # handle division by zero
     bfracc2 = b_rate2 / e_rate2
     bfracc2[np.isnan(bfracc2)] = 0  # handle division by zero
-    axs[3, 0].plot(time, bfracc1*100, lw=1.5, color='C6')
-    axs[3, 0].set_ylabel(r'$F$ (%)')
-    axs[3, 0].set_ylim(0, 100)
-    axs[3, 1].plot(time, bfracc2*100, lw=1.5, color='C6')
+    axs[2, 1].plot(time, bfracc1*100, lw=1, color='C6', label='winner')
+    axs[2, 1].plot(time, bfracc2*100, lw=1, color='gray', label='loser')
+    axs[2, 1].set_ylabel(r'$F$ (%)')
+    axs[2, 1].set_xlabel(r'$Time$ (s)')
+    # axs[2, 1].set_ylim(0, 100)
 
-    save_figure(task_dir, fig2, fig_name, tight=False)
+    for r in range(nrows):
+        axs[r, 1].legend(loc='best', ncol=2, fontsize='xx-small')
+    save_figure(task_dir, fig2, fig_name, tight=True)
 
 
 def plot_isis(task_info, isis, ieis, ibis, cvs, spks_per_burst, task_dir, bins=np.arange(0, 760, 10), extend_burst=2):
-    sns.set(context='talk', style='darkgrid')
+    sns.set(context=cntxt, style='darkgrid')
     valid_burst = task_info['sim']['valid_burst']*1e3
     max_isi = int(bins[-1])
     step = bins[1]
@@ -345,7 +371,7 @@ def plot_isis(task_info, isis, ieis, ibis, cvs, spks_per_burst, task_dir, bins=n
     sp_burst = spks_per_burst.mean()
     nrows, ncols = (2, 3)
 
-    fig5, axs = plt.subplots(2, 3, figsize=(int(6*ncols), int(4*nrows)), sharex=False, sharey='row')
+    fig5, axs = plt.subplots(nrows, ncols, figsize=(int(6*ncols), int(4*nrows)), dpi=100, sharex=False, sharey='row')
     sns.distplot(isis[isis > valid_burst], bins=bins, kde=False, norm_hist=True, color='C5', ax=axs[0, 0])
     axs[0, 0].set_title('spikes')
     axs[0, 0].set_ylabel(r'$Proportion$')
@@ -376,7 +402,7 @@ def plot_isis(task_info, isis, ieis, ibis, cvs, spks_per_burst, task_dir, bins=n
 
 
 def plot_fig3(task_info, dend_mon, events, bursts, spikes, pop_dend, task_dir):
-    sns.set(context='talk', style='darkgrid')
+    sns.set(context=cntxt, style='darkgrid')
     smooth_win = task_info['sim']['smooth_win']
     eta0 = unitless(task_info['plastic']['eta0'], pA)
     tauB = unitless(task_info['plastic']['tauB'], ms)
@@ -394,7 +420,7 @@ def plot_fig3(task_info, dend_mon, events, bursts, spikes, pop_dend, task_dir):
     nn2plt = 10
     nrows, ncols = (4, 3)
 
-    fig3, axs = plt.subplots(nrows, ncols, figsize=(int(6*ncols), int(4*nrows)), sharex='row')
+    fig3, axs = plt.subplots(nrows, ncols, figsize=(int(6*ncols), int(4*nrows)), dpi=100, sharex='row')
     fig3.add_axes(axs[0, 0])
     plt.title(r'Plasticity weights')
     plt.plot(dend_mon.t_, dend_mon.muOUd[:nn2plt].T*1e12, color='gray', lw=0.5)
@@ -473,7 +499,7 @@ def plot_fig3(task_info, dend_mon, events, bursts, spikes, pop_dend, task_dir):
 
 
 def plot_plastic_rasters(task_info, spk_times, burst_times, bursts, task_dir):
-    sns.set(context='talk', style='darkgrid')
+    sns.set(context=cntxt, style='darkgrid')
     target = unitless(task_info['targetB'], Hz, as_int=False)
     last_time = unitless(task_info['sim']['runtime'], second)
     nn = len(spk_times)
@@ -521,7 +547,7 @@ def plot_plastic_rasters(task_info, spk_times, burst_times, bursts, task_dir):
 
 
 def plot_plastic_check(task_info, pop_dend1, spks_dend, bursts, burst_times, task_dir):
-    sns.set(context='talk', style='darkgrid')
+    sns.set(context=cntxt, style='darkgrid')
     smooth_win = task_info['sim']['smooth_win']
     target = unitless(task_info['targetB'], Hz, as_int=False)
     last_time = unitless(task_info['sim']['runtime'], second)
@@ -552,7 +578,7 @@ def plot_plastic_check(task_info, pop_dend1, spks_dend, bursts, burst_times, tas
 
 
 def plot_pop_averages(task_info, rates_dec, rates_sen, cps, task_dir, fig_name='/fig1_averages.png'):
-    sns.set(context='talk', style='darkgrid')
+    sns.set(context=cntxt, style='darkgrid')
     _, pops, tps1 = rates_dec.shape
     _, tps2 = cps.shape
     time1 = get_this_time(task_info, tps1)
@@ -560,8 +586,9 @@ def plot_pop_averages(task_info, rates_dec, rates_sen, cps, task_dir, fig_name='
     settle_time = unitless(task_info['sim']['settle_time'], second, as_int=False)
     stim_on = unitless(task_info['sim']['stim_on'], second, as_int=False) - settle_time
     stim_off = unitless(task_info['sim']['stim_off'], second, as_int=False) - settle_time
+    nrows, ncols = (3, 1)
 
-    fig, axs = plt.subplots(3, 1, figsize=(8, 9), sharex=True)
+    fig, axs = plt.subplots(nrows, ncols, figsize=(int(8*ncols), int(2*nrows)), dpi=100, sharex=True)
     fig.add_axes(axs[0])
     plt.plot(time1, rates_dec[:, 0, :].mean(axis=0), c='C3', lw=2, label='pref')
     plt.plot(time1, rates_dec[:, 1, :].mean(axis=0), c='C0', lw=2, label='non-pref')

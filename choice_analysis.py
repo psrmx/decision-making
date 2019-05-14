@@ -92,7 +92,8 @@ def get_average_trials(tables_task_ids):
         mean_stim, stim_time = get_mean_stim(params, tps2)
         plot_pop_averages(params, rates_dec, rates_sen, cp_av_per_trial, task_dir, '/fig1_'+fig_name)
         plot_fig2(params, events_av_per_trial, bursts_av_per_trial, spikes_av_per_trial,
-                  mean_stim, mean_stim, stim_time, task_dir, '/fig2_'+fig_name)
+                  mean_stim, mean_stim, stim_time, rates_dec[:, 0, :].mean(axis=0),
+                  rates_dec[:, 1, :].mean(axis=0), False, task_dir, '/fig2_'+fig_name)
 
         # save variables
         file_name = task_dir + '/CPs_' + fig_name.replace(fig_extension, '.pkl')

@@ -93,11 +93,14 @@ def run_hierarchical(task_info, taskdir, tempdir):
 
         if task_info['sim']['burst_analysis']:
             spksSE = monitors[0]
+            rate_winner = raw_data['rates_dec'][0]
+            rate_loser = raw_data['rates_dec'][1]
+            winner_pop = raw_data['winner_pop']
             all_spk_times, all_isis = spk_mon2spk_times(task_info, spksSE)
             events, bursts, singles, spikes, downsample = spk_times2raster(task_info, all_spk_times,
                                                                            broad_step=True, downsample=True)
-            plot_fig2(task_info, events, bursts, spikes, stim1, stim2, stim_time, taskdir)
-            plot_isis(task_info, *all_isis, task_dir=taskdir)
+            # plot_fig2(task_info, events, bursts, spikes, stim1, stim2, stim_time, rate_winner, rate_loser, winner_pop, taskdir)
+            # plot_isis(task_info, *all_isis, task_dir=taskdir)
 
             computed = {'events': events, 'bursts': bursts, 'singles': singles, 'spikes': spikes,
                         'events_low_def': downsample[0], 'bursts_low_def': downsample[1],
@@ -154,18 +157,18 @@ class JobInfoExperiment(Experiment):
             'sim': {
                 'sim_dt': Parameter(0.1, 'ms'),
                 'stim_dt': Parameter(1, 'ms'),
-                'runtime': Parameter(25, 'second'),
-                'settle_time': Parameter(0, 'second'),
+                'runtime': Parameter(3.5, 'second'),
+                'settle_time': Parameter(0.5, 'second'),
                 'stim_on': Parameter(1, 'second'),
-                'stim_off': Parameter(25, 'second'),
+                'stim_off': Parameter(3, 'second'),
                 'replicate_stim': False,
                 'num_method': 'euler',
                 'seed_con': Parameter(1284),
-                'smooth_win': Parameter(1000, 'ms'),
+                'smooth_win': Parameter(50, 'ms'),
                 'valid_burst': Parameter(16e-3),
                 'cp_step': 10,
-                '2c_model': False,
-                'plt_fig1': False,
+                '2c_model': True,
+                'plt_fig1': True,
                 'burst_analysis': True,
                 'plasticity': False,
                 'online_stim': False},
@@ -179,9 +182,9 @@ class JobInfoExperiment(Experiment):
 
         param_ranges = {
             'c': ParameterArray(np_array([0])),     # np.linspace(-1, 1, 11)
-            'bfb': ParameterArray(np_array([1])),
-            'targetB': ParameterArray(np_array([2]), 'Hz'),  # np.arange(1.5, 4.5, 0.5)
-            'iter': ParameterArray(np.arange(0, 1))
+            'bfb': ParameterArray(np_array([0, 1, 10, 20, 40])),
+            # 'targetB': ParameterArray(np_array([2]), 'Hz'),  # np.arange(1.5, 4.5, 0.5)
+            'iter': ParameterArray(np.arange(0, 50))
         }
 
         # add params to tables
