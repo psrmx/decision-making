@@ -44,7 +44,8 @@ eqs_naud_dend = '''
     K = bpA * (((t-lastspike_soma) >= k1) * ((t-lastspike_soma) <= k2)) : amp
     tau = taud          : second
     Cm = Cmd            : farad
-    muOUd               : amp
+    # muOUd               : amp
+    muOUd = -270*pA     : amp
     lastspike_soma      : second (linked)
 '''
 
