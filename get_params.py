@@ -143,9 +143,9 @@ def get_2c_params(task_info):
     paramsen = {**param_wimmer, **param_naud}
 
     # re-adjust synaptic conductance
-    for gx in ['gEE', 'gIE']:   # , 'gXE']:
+    for gx in ['gEE', 'gIE', 'gXE']:
         paramsen[gx] = adjust_variable(param_wimmer[gx], param_wimmer['gleakE'], gleakEs)
-    paramsen['gXE'] = 2.31*nS   # scaled: 2.527, lower_bound: 2.17
+    # paramsen['gXE'] = 2.45*nS   # scaled: 2.527, lower_bound: 2.17. prev 2.4602 --> 550 pA
 
     return paramsen
 
