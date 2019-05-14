@@ -476,8 +476,8 @@ def mk_poisson_fb(task_info, dend1):
     extD1 = PoissonGroup(N_DX, rates=task_info['plastic']['dec_winner_rate'])
 
     # FB synapse
-    synDXdend1 = Synapses(extD1, dend1, model='w = w_fb : 1', method=num_method, delay=d,
-                          on_pre='x_ea += w', namespace=paramfffb, name='synDXdend1')
+    synDXdend1 = Synapses(extD1, dend1, model='w = w_fb : 1', method=num_method,
+                          on_pre='x_ea += w', delay=d, name='synDXdend1', namespace=paramfffb)
     synDXdend1.connect(p='eps')
 
     return extD1, synDXdend1
@@ -495,8 +495,9 @@ def init_conds_sen(sen_groups, two_comp=False, plastic=False):
         sen_groups['SE'].V = '-70*mV + 2*mV * rand()'
         sen_groups['SI'].V = '-70*mV + 2*mV * rand()'
         if not plastic:
-            last_muOUd = np.loadtxt('last_muOUd.csv')
-            sen_groups['dend'].muOUd = np.tile(last_muOUd, 2) * amp
+            pass
+            # last_muOUd = np.loadtxt('last_muOUd.csv')
+            # sen_groups['dend'].muOUd = np.tile(last_muOUd, 2) * amp
     else:
         sen_groups['SE'].V = '-50*mV + 2*mV * rand()'
         sen_groups['SI'].V = '-50*mV + 2*mV * rand()'
