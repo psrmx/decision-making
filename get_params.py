@@ -169,7 +169,8 @@ def get_stim_params(task_info):
     # adjust external current
     if task_info['sim']['2c_model']:
         paramsen = get_2c_params(task_info)
-        I0 = adjust_variable(I0, paramsen['CmE'], paramsen['Cms'])  # 160*pA
+        I0 = 100*pA
+        # I0 = adjust_variable(I0, paramsen['CmE'], paramsen['Cms'])  # 160*pA
         # I0_wimmer = I0  # makes sure the variance of the noise is also scaled!
 
     paramstim = {'c': c, 'I0': I0, 'I0_wimmer': I0_wimmer, 'mu1': mu1, 'mu2': mu2,  'tau_stim': tau_stim,
