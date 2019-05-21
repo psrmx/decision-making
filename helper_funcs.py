@@ -60,19 +60,27 @@ def handle_downsampled_spikes(spk_times):
     return spk_times.astype(np.int16)
 
 
-def instantaneous_rate(task_info, spikes):
+def instantaneous_rate(task_info, spikes, smooth_win=None, step=10):
     """computes the instantaneous spike count for a neuron at each trl"""
-    n_trials, tps = spikes.shape
+    if not smooth_win:
+        smooth_win = unitless(task_info['sim']['smooth_win'], second, as_int=False)
+    try:
+        n_trials, tps = spikes.shape
+    except ValueError:
+        spikes = spikes[np.newaxis, :]
+        n_trials, tps = spikes.shape
     new_dt = get_this_dt(task_info, tps)
-    smooth_win = unitless(task_info['sim']['smooth_win'], second, as_int=False)
-    rates = np.empty((n_trials, tps), dtype=np.float32)
+    time = get_this_time(task_info, tps)
+    time_low_def = get_this_time(task_info, int(tps/step))
+    rates = np.empty((n_trials, int(tps/step)), dtype=np.float32)
     for i in range(n_trials):
-        rates[i] = smooth_rate(spikes[i], smooth_win, new_dt, sub=[])[0]
+        rate = smooth_rate(spikes[i], smooth_win, new_dt)
+        rates[i] = interpolate_rates(rate, time, time_low_def)
 
     return rates
 
 
-def smooth_rate(rate, smooth_win, dt, sub):
+def smooth_rate(rate, smooth_win, dt, sub=[]):
     """rectangular sliding window on a firing rate to smooth"""
     kernel = np.ones(int(smooth_win / dt), dtype=np.float32)
     if bool(sub):
@@ -80,20 +88,18 @@ def smooth_rate(rate, smooth_win, dt, sub):
         rate2 = rate[sub:].mean(axis=0) / smooth_win
         smoothed_rate1 = np.convolve(rate1, kernel, mode='same').astype(np.float32)
         smoothed_rate2 = np.convolve(rate2, kernel, mode='same').astype(np.float32)
-
         return smoothed_rate1, smoothed_rate2
 
     rate /= smooth_win
     smoothed_rate = np.convolve(np.squeeze(rate), kernel, mode='same').astype(np.float32)
+    return smoothed_rate
 
-    return smoothed_rate, smoothed_rate
 
-
-def interpolate_rates(rate_mon1, rate_mon2, time, time_interp, smooth_win):
+def interpolate_rates(rate, time, time_interp):
     """downsample a population firing rate"""
     from scipy.interpolate import interp1d
-    f_interp = [interp1d(time, rate.smooth_rate(window='flat', width=smooth_win)) for rate in [rate_mon1, rate_mon2]]
-    return np_array([f(time_interp) for f in f_interp])
+    f = interp1d(time, rate)
+    return f(time_interp)
 
 
 def choice_selection(task_info, monitors, downsample_step=10):
@@ -105,13 +111,15 @@ def choice_selection(task_info, monitors, downsample_step=10):
     runtime = unitless(task_info['sim']['runtime'], second, as_int=False)
     stim_off = unitless(task_info['sim']['stim_off'], second, as_int=False)
     smooth_win = task_info['sim']['smooth_win']
-    rate_dec1, rate_dec2, rate_sen1, rate_sen2 = monitors
 
-    # downsample population rates
+    # smooth rate monitors and downsample
     time = np.arange(0, runtime, sim_dt, dtype=np.float32)
-    time_low_def = np.arange(0, runtime, new_dt)
-    rates_dec = interpolate_rates(rate_dec1, rate_dec2, time, time_low_def, smooth_win)
-    rates_sen = interpolate_rates(rate_sen1, rate_sen2, time, time_low_def, smooth_win)
+    time_low_def = np.arange(0, runtime, new_dt, dtype=np.float32)
+    smooth_rates = [rate.smooth_rate(window='flat', width=smooth_win) for rate in monitors]
+    interp_rates = [interpolate_rates(rate, time, time_low_def) for rate in smooth_rates]
+    rate_dec1, rate_dec2, rate_sen1, rate_sen2 = interp_rates
+    rates_dec = np.vstack((rate_dec1, rate_dec2)).astype(np.float32)
+    rates_sen = np.vstack((rate_sen1, rate_sen2)).astype(np.float32)
 
     # choice selection
     dec_ival = np_array([(stim_off-0.5)/new_dt, stim_off/new_dt], dtype=int)
@@ -120,11 +128,15 @@ def choice_selection(task_info, monitors, downsample_step=10):
     rates_dec = np_array([rates_dec[winner_pop, settle_time_idx:], rates_dec[~winner_pop, settle_time_idx:]])
     rates_sen = np_array([rates_sen[winner_pop, settle_time_idx:], rates_sen[~winner_pop, settle_time_idx:]])
 
-    choice_data = {'rates_dec': rates_dec,
-                   'rates_sen': rates_sen,
-                   'winner_pop': np_array([winner_pop])}
+    return rates_dec, rates_sen, np_array([winner_pop])
 
-    return choice_data
+
+def get_winner_loser_trials(spikes, is_winner_pop):
+    """divide all trials of a neuron into winner and loser"""
+    winner_trials = spikes[is_winner_pop]
+    loser_trials = spikes[np.logical_not(is_winner_pop)]
+
+    return winner_trials, loser_trials
 
 
 def reorder_winner_pop(pop_array, stack=False):
@@ -138,15 +150,7 @@ def reorder_winner_pop(pop_array, stack=False):
     return np_array([pop_array[1], pop_array[0]])
 
 
-def get_winner_loser_trials(spikes, is_winner_pop):
-    """divide all trials of a neuron into winner and loser"""
-    winner_trials = spikes[is_winner_pop]
-    loser_trials = spikes[np.logical_not(is_winner_pop)]
-
-    return winner_trials, loser_trials
-
-
-def choice_probability(winner_trials, loser_trials, step=10):
+def choice_probability(winner_trials, loser_trials, step=1):
     """computes CP of a neuron from its spike distributions at each timepoint"""
     tps = winner_trials.shape[1]
     cp = np.empty(int(tps/step), dtype=np.float32)
@@ -159,24 +163,11 @@ def choice_probability(winner_trials, loser_trials, step=10):
     return cp
 
 
-def pair_noise_corr(single_rates, step=25):
-    """computes Pearson correlations at each timepoint between two neurons"""
-    nn, tps = single_rates.shape
-    sub = int(nn/2)
-    corrs_ii = np.empty((int(sub**2), int(tps/step)), dtype=np.float32)
-    corrs_ij = np.empty((int(sub**2), int(tps/step)), dtype=np.float32)
-
-    for i in range(nn):
-        rate_i = single_rates[i]
-        for j in range(nn):
-            rate_j = single_rates[j]
-
-            for t in np.linspace(0, tps-step, int(tps.step), dtype=np.int16):
-                if i < sub and j < sub:
-                    corrs_ii[i+j, int(t/step)] = np.corrcoef(rate_i[:,], rate_j)[0, 1]
-                else:
-                    corrs_ij[i+j, int(t/step)] = np.corrcoef(rate_i, rate_j)[0, 1]
-    return None
+def pair_noise_corr(rates1, rates2):
+    """computes Pearson correlation of rate1 and rate2 across trials at each timepoint"""
+    tps = rates1.shape[-1]
+    corr = np.diagonal(np.corrcoef(rates1, rates2, rowvar=False)[:tps, tps:])
+    return corr
 
 
 def create_inset(axes, data2plt, c, xlim, w=1, h=0.7, nyticks=4):
@@ -286,7 +277,7 @@ def plot_fig1(task_info, monitors, task_dir):
     save_figure(task_dir, fig1, '/figure1.png', tight=False)
 
 
-def plot_fig2(task_info, events, bursts, spikes, stim1, stim2, stim_time, rate_winner, rate_loser, winner_pop, task_dir, fig_name='/figure2.png'):
+def plot_fig2(task_info, events, bursts, spikes, stim, stim_time, rates_dec, winner_pop, task_dir, fig_name='/figure2.png'):
     sns.set(context=cntxt, style='darkgrid')
 
     nn, tps = events.shape
@@ -294,26 +285,23 @@ def plot_fig2(task_info, events, bursts, spikes, stim1, stim2, stim_time, rate_w
     smooth_win = unitless(task_info['sim']['smooth_win'], second, as_int=False)
     time = get_this_time(task_info, tps)
     new_dt = get_this_dt(task_info, tps)
-    _, stim_tps = stim1.shape
+    _, stim_tps = stim.shape
     if tps != stim_tps:
         stim_dt = get_this_dt(task_info, stim_tps, include_settle_time=True)
         settle_time_idx = int(unitless(task_info['sim']['settle_time'], second, as_int=False) / stim_dt)
-        stim1 = stim1[:, settle_time_idx:]
-        stim2 = stim2[:, settle_time_idx:]
-        stim_time = stim_time[:stim1.shape[1]]
-    tps2 = rate_winner.shape[0]
+        stim = stim[:, settle_time_idx:]
+        stim_time = stim_time[:stim.shape[-1]]
+    if winner_pop:
+        events = reorder_winner_pop(events, stack=True)
+        bursts = reorder_winner_pop(bursts, stack=True)
+        spikes = reorder_winner_pop(spikes, stack=True)
+    tps2 = rates_dec.shape[-1]
     time2 = get_this_time(task_info, tps2)
     n_dec = task_info['dec']['N_E'] * task_info['dec']['sub']
     b_fb = task_info['bfb']
     gleak = 24.2857*nS
     g = (0.004*b_fb*gleak)
     v_dend = 73*mV
-    stim = np.array([stim1.mean(axis=0), stim2.mean(axis=0)])
-    if winner_pop:
-        events = reorder_winner_pop(events, stack=True)
-        bursts = reorder_winner_pop(bursts, stack=True)
-        spikes = reorder_winner_pop(spikes, stack=True)
-        stim = reorder_winner_pop(stim)
     nrows, ncols = (3, 2)
 
     fig2, axs = plt.subplots(nrows, ncols, figsize=(int(8 * ncols), int(2 * nrows)), dpi=100, sharex=True)
@@ -335,8 +323,8 @@ def plot_fig2(task_info, events, bursts, spikes, stim1, stim2, stim_time, rate_w
     axs[2, 0].set_xlabel(r'$Time$ (s)')
     axs[2, 0].set_ylim(0, 25)
 
-    top_down1 = n_dec * 0.2 * rate_winner * (1*ms) * g * v_dend
-    top_down2 = n_dec * 0.2 * rate_loser * (1*ms) * g * v_dend
+    top_down1 = n_dec * 0.2 * rates_dec[0] * (1*ms) * g * v_dend
+    top_down2 = n_dec * 0.2 * rates_dec[1] * (1*ms) * g * v_dend
     axs[0, 1].plot(time2, top_down1/pA, color='C3', lw=1, label='winner')
     axs[0, 1].plot(time2, top_down2/pA, color='C0', lw=1, label='loser')
     axs[0, 1].set_ylabel(r'$I_{top-down}$ (pA)')
@@ -371,7 +359,7 @@ def plot_isis(task_info, isis, ieis, ibis, cvs, spks_per_burst, task_dir, bins=n
     sp_burst = spks_per_burst.mean()
     nrows, ncols = (2, 3)
 
-    fig5, axs = plt.subplots(nrows, ncols, figsize=(int(6*ncols), int(4*nrows)), dpi=100, sharex=False, sharey='row')
+    fig5, axs = plt.subplots(nrows, ncols, figsize=(int(4*ncols), int(3*nrows)), dpi=100, sharex=False, sharey='row')
     sns.distplot(isis[isis > valid_burst], bins=bins, kde=False, norm_hist=True, color='C5', ax=axs[0, 0])
     axs[0, 0].set_title('spikes')
     axs[0, 0].set_ylabel(r'$Proportion$')
@@ -577,42 +565,54 @@ def plot_plastic_check(task_info, pop_dend1, spks_dend, bursts, burst_times, tas
     save_figure(task_dir, fig5, '/fig5-sanity_check.png', tight=True)
 
 
-def plot_pop_averages(task_info, rates_dec, rates_sen, cps, task_dir, fig_name='/fig1_averages.png'):
+def plot_pop_averages(task_info, rates_dec, rates_sen, cps, corr_ii, corr_ij, task_dir, fig_name='/fig1_averages.png'):
     sns.set(context=cntxt, style='darkgrid')
     _, pops, tps1 = rates_dec.shape
-    _, tps2 = cps.shape
+    tps2 = cps.shape[-1]
+    tps3 = corr_ii.shape[-1]
     time1 = get_this_time(task_info, tps1)
     time2 = get_this_time(task_info, tps2)
+    time3 = get_this_time(task_info, tps3)
     settle_time = unitless(task_info['sim']['settle_time'], second, as_int=False)
     stim_on = unitless(task_info['sim']['stim_on'], second, as_int=False) - settle_time
     stim_off = unitless(task_info['sim']['stim_off'], second, as_int=False) - settle_time
-    nrows, ncols = (3, 1)
+    nrows, ncols = (4, 1)
 
     fig, axs = plt.subplots(nrows, ncols, figsize=(int(8*ncols), int(2*nrows)), dpi=100, sharex=True)
     fig.add_axes(axs[0])
-    plt.plot(time1, rates_dec[:, 0, :].mean(axis=0), c='C3', lw=2, label='pref')
-    plt.plot(time1, rates_dec[:, 1, :].mean(axis=0), c='C0', lw=2, label='non-pref')
-    plt.axvline(x=stim_on, color='gray', ls='dashed', lw=1.5)
-    plt.axvline(x=stim_off, color='gray', ls='dashed', lw=1.5)
+    plt.plot(time1, rates_dec[:, 0, :].mean(axis=0), c='C3', lw=1.5, label='pref')
+    plt.plot(time1, rates_dec[:, 1, :].mean(axis=0), c='C0', lw=1.5, label='non-pref')
+    plt.axvline(x=stim_on, color='gray', ls='dashed', lw=1)
+    plt.axvline(x=stim_off, color='gray', ls='dashed', lw=1)
     plt.ylim(0, 50)
     plt.title('Integration circuit')
     plt.ylabel(r'$Population$ $rate$ (sp/sec)', {'horizontalalignment': 'right'})
 
     fig.add_axes(axs[1])
     plt.title('Sensory circuit')
-    plt.plot(time1, rates_sen[:, 0, :].mean(axis=0), c='C3', lw=2, label='pref')
-    plt.plot(time1, rates_sen[:, 1, :].mean(axis=0), c='C0', lw=2, label='non-pref')
-    plt.axvline(x=stim_on, color='gray', ls='dashed', lw=1.5)
-    plt.axvline(x=stim_off, color='gray', ls='dashed', lw=1.5)
+    plt.plot(time1, rates_sen[:, 0, :].mean(axis=0), c='C3', lw=1.5, label='pref')
+    plt.plot(time1, rates_sen[:, 1, :].mean(axis=0), c='C0', lw=1.5, label='non-pref')
+    plt.axvline(x=stim_on, color='gray', ls='dashed', lw=1)
+    plt.axvline(x=stim_off, color='gray', ls='dashed', lw=1)
     plt.ylim(0, 25)
-    plt.legend(loc='upper right', fontsize='x-small')
+    plt.legend(loc='upper right', ncol=2, fontsize='x-small')
 
     fig.add_axes(axs[2])
-    plt.plot(time2, cps.mean(axis=0), c='black', lw=2)
-    plt.axvline(x=stim_on, color='gray', ls='dashed', lw=1.5)
-    plt.axvline(x=stim_off, color='gray', ls='dashed', lw=1.5)
-    plt.xlabel(r'$Time$ (sec)')
+    plt.plot(time2, cps.mean(axis=0), c='black', lw=1.5)
+    plt.axvline(x=stim_on, color='gray', ls='dashed', lw=1)
+    plt.axvline(x=stim_off, color='gray', ls='dashed', lw=1)
     plt.ylabel(r'$Choice$ $prob.$')
-    plt.ylim(0.41, 0.71)
+    plt.ylim(0.41, 0.61)
+
+    fig.add_axes(axs[3])
+    corr_all = np.vstack((corr_ii, corr_ij))
+    plt.plot(time3, np.nanmean(corr_all, axis=0), c='black', lw=1.5, label='EE')
+    plt.plot(time3, np.nanmean(corr_ii, axis=0), c='xkcd:magenta', lw=1.5, label='EiEi')
+    plt.plot(time3, np.nanmean(corr_ij, axis=0), c='xkcd:turquoise', lw=1.5, label='EiEj')
+    plt.axvline(x=stim_on, color='gray', ls='dashed', lw=1)
+    plt.axvline(x=stim_off, color='gray', ls='dashed', lw=1)
+    plt.legend(loc='upper right', ncol=3, fontsize='x-small')
+    plt.xlabel(r'$Time$ (sec)')
+    plt.ylabel(r'$Correlation$')
 
     save_figure(task_dir, fig, fig_name, tight=False)
