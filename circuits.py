@@ -15,6 +15,39 @@ from brian2.synapses import Synapses
 from brian2.units import amp, second
 
 
+def get_hierarchical_net(task_info):
+    """
+    Construct hierarchical net for decision making experiment.
+
+    :return: Brian Network object to run and monitors for plotting
+    """
+    dec_groups, dec_synapses, dec_subgroups = mk_dec_circuit(task_info)
+    sen_groups, sen_synapses, sen_subgroups = mk_sen_circuit(task_info)
+    fffb_synapses = mk_fffb_synapses(task_info, dec_subgroups, sen_subgroups)
+
+    seed(task_info['seed'])
+    dec_groups = init_conds_dec(dec_groups)
+    sen_groups = init_conds_sen(sen_groups, two_comp=task_info['sim']['2c_model'])
+    monitors = mk_monitors(task_info, dec_groups, sen_groups, dec_subgroups, sen_subgroups)
+    net = Network(dec_groups.values(), dec_synapses.values(),
+                  sen_groups.values(), sen_synapses.values(),
+                  fffb_synapses.values(), *monitors, name='hierarchical_net')
+
+    return net, monitors
+
+
+def get_plasticity_net(task_info):
+    """Construct sensory circuit for inhibitory plasticity experiment."""
+    sen_groups, sen_synapses, sen_subgroups = mk_sen_circuit_plastic(task_info)
+
+    seed(task_info['seed'])
+    sen_groups = init_conds_sen(sen_groups, two_comp=True, plastic=True)
+    monitors = mk_monitors_plastic(task_info, sen_groups, sen_subgroups)
+    net = Network(sen_groups.values(), sen_synapses.values(), *monitors, name='plasticity_net')
+
+    return net, monitors
+
+
 def mk_dec_circuit(task_info):
     """
     Creates the 'winner-takes-all' network described in Wang 2002.
@@ -517,9 +550,7 @@ def mk_monitors(task_info, dec_groups, sen_groups, dec_subgroups, sen_subgroups)
     senE2 = sen_subgroups['SE2']
 
     # create monitors
-    nnSE = int(task_info['sen']['N_E'] * task_info['sen']['sub'])     # no. of neurons in sub-pop1
-    nn2rec = int(100)                                                 # no. of neurons to record
-    spksSE = SpikeMonitor(senE[nnSE-nn2rec:nnSE+nn2rec])              # lasts of SE1 and firsts SE2
+    spksSE = SpikeMonitor(senE)
     rateDE1 = PopulationRateMonitor(decE1)
     rateDE2 = PopulationRateMonitor(decE2)
     rateSE1 = PopulationRateMonitor(senE1)
@@ -528,13 +559,12 @@ def mk_monitors(task_info, dec_groups, sen_groups, dec_subgroups, sen_subgroups)
     monitors = [spksSE, rateDE1, rateDE2, rateSE1, rateSE2]
 
     if task_info['sim']['plt_fig1']:
-        spksSE = SpikeMonitor(senE)
         decE = dec_groups['DE']
         nnDE = int(task_info['dec']['N_E'] * 2 * task_info['dec']['sub'])
         spksDE = SpikeMonitor(decE[:nnDE])
         rateDI = PopulationRateMonitor(dec_groups['DI'])
         rateSI = PopulationRateMonitor(sen_groups['SI'])
-        monitors = [spksSE, rateDE1, rateDE2, rateSE1, rateSE2, spksDE, rateDI, rateSI]
+        monitors = monitors + [spksDE, rateDI, rateSI]
 
     return monitors
 
@@ -556,36 +586,3 @@ def mk_monitors_plastic(task_info, sen_groups, sen_subgroups):
     online_stim_mon = StateMonitor(senE, variables=['I'], record=True, dt=stim_dt)
 
     return [spksSE, dend_mon, online_stim_mon, spks_dend, pop_dend]
-
-
-def get_hierarchical_net(task_info):
-    """
-    Construct hierarchical net for decision making experiment.
-
-    :return: Brian Network object to run and monitors for plotting
-    """
-    dec_groups, dec_synapses, dec_subgroups = mk_dec_circuit(task_info)
-    sen_groups, sen_synapses, sen_subgroups = mk_sen_circuit(task_info)
-    fffb_synapses = mk_fffb_synapses(task_info, dec_subgroups, sen_subgroups)
-
-    seed(task_info['seed'])
-    dec_groups = init_conds_dec(dec_groups)
-    sen_groups = init_conds_sen(sen_groups, two_comp=task_info['sim']['2c_model'])
-    monitors = mk_monitors(task_info, dec_groups, sen_groups, dec_subgroups, sen_subgroups)
-    net = Network(dec_groups.values(), dec_synapses.values(),
-                  sen_groups.values(), sen_synapses.values(),
-                  fffb_synapses.values(), *monitors, name='hierarchical_net')
-
-    return net, monitors
-
-
-def get_plasticity_net(task_info):
-    """Construct sensory circuit for inhibitory plasticity experiment."""
-    sen_groups, sen_synapses, sen_subgroups = mk_sen_circuit_plastic(task_info)
-
-    seed(task_info['seed'])
-    sen_groups = init_conds_sen(sen_groups, two_comp=True, plastic=True)
-    monitors = mk_monitors_plastic(task_info, sen_groups, sen_subgroups)
-    net = Network(sen_groups.values(), sen_synapses.values(), *monitors, name='plasticity_net')
-
-    return net, monitors
