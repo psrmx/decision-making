@@ -10,7 +10,10 @@ def spk_mon2spk_times(task_info, spk_mon):
     settle_time = unitless(task_info['sim']['settle_time'], second, as_int=False)
     valid_burst = task_info['sim']['valid_burst']*1e3
     mon_spk_times = spk_mon.spike_trains()
-    nn = mon_spk_times.__len__()
+    sub = int(task_info['sen']['N_E'] * task_info['sen']['sub'])
+    nn_rec1 = np.random.randint(0, sub, size=100)
+    nn_rec2 = np.random.randint(sub, 2*sub, size=100)
+    nn_rec = np.hstack((nn_rec1, nn_rec2))              # random selection of neurons to work with
 
     # allocate variables
     event_times = {}
@@ -23,7 +26,7 @@ def spk_mon2spk_times(task_info, spk_mon):
     cvs = []
     mean_spks_per_burst = []
 
-    for n in np.arange(nn, dtype=np.int16):
+    for i, n in enumerate(nn_rec):
         this_spks = unitless(mon_spk_times[n].astype(np.float32), second, as_int=False)
         this_spks = this_spks[this_spks >= settle_time]  # ignore spks during settle_time
         this_spks -= settle_time
@@ -64,14 +67,14 @@ def spk_mon2spk_times(task_info, spk_mon):
             assert allspks == len(this_spks), "Ups, sth is weird in the burst quantification :("
 
             # get events, bursts, singles times
-            event_times[n] = this_spks[is_event.astype(bool)]
-            burst_times[n] = this_spks[is_burst.astype(bool)]
-            single_times[n] = this_spks[issingle.astype(bool)]
-            spike_times[n] = this_spks
+            event_times[i] = this_spks[is_event.astype(bool)]
+            burst_times[i] = this_spks[is_burst.astype(bool)]
+            single_times[i] = this_spks[issingle.astype(bool)]
+            spike_times[i] = this_spks
 
             # isis in ms
-            ieis = np.diff(event_times[n])
-            ibis = np.diff(burst_times[n])
+            ieis = np.diff(event_times[i])
+            ibis = np.diff(burst_times[i])
             all_ieis = np.hstack((np.zeros(1), ieis[ieis > 0]*1e3, all_ieis)).astype(np.float32)
             all_ibis = np.hstack((np.zeros(1), ibis[ibis > 0]*1e3, all_ibis)).astype(np.float32)
     all_isis = (all_isis[all_isis > 0], all_ieis[all_ieis > 0], all_ibis[all_ibis > 0],
@@ -146,5 +149,3 @@ def spk_times2raster(task_info, all_spk_times, broad_step=False, rate=False, dow
                [events_downsample, bursts_downsample, singles_downsample, spikes_downsample]
 
     return events.toarray(), bursts.toarray(), singles.toarray(), spikes.toarray()
-
-# TODO: save spksperburst or not?
