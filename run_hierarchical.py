@@ -11,7 +11,7 @@ from helper_funcs import np_array
 # cluster configuration
 config['cluster'] = config.run_on_cluster()
 username = 'paola'
-max_tasks = 50          # 260 cores in the server
+max_tasks = 150          # 260 cores in the server
 mem_per_task = 20.      # in GB, do a test with 32 GB then find optimal value
 max_task_time = None    # In HH:MM:SS, important if you want to jump ahead queue. For local run: None
 poll_interval = 2.      # in minutes
@@ -63,7 +63,6 @@ def run_hierarchical(task_info, taskdir, tempdir):
         stim2 = stim_mon.I[sub:]
 
     # results
-    raw_data = np.zeros(1, dtype=np.float32)
     computed = np.zeros(1, dtype=np.float32)
 
     if task_info['sim']['plasticity']:
@@ -85,7 +84,11 @@ def run_hierarchical(task_info, taskdir, tempdir):
     else:
         # choice selection
         choice_monitors = monitors[1:5]
-        raw_data = choice_selection(task_info, choice_monitors)
+        rates_dec, rates_sen, winner_pop = choice_selection(task_info, choice_monitors)
+        raw_data = {'rates_dec': rates_dec, 'rates_sen': rates_sen, 'winner_pop': winner_pop}
+        stim = np.array([stim1.mean(axis=0), stim2.mean(axis=0)])
+        if winner_pop:
+            stim = np.array([stim2.mean(axis=0), stim1.mean(axis=0)])
 
         if task_info['sim']['plt_fig1']:
             mon2plt = monitors.copy() + [stim1, stim2, stim_time]
@@ -93,18 +96,13 @@ def run_hierarchical(task_info, taskdir, tempdir):
 
         if task_info['sim']['burst_analysis']:
             spksSE = monitors[0]
-            rate_winner = raw_data['rates_dec'][0]
-            rate_loser = raw_data['rates_dec'][1]
-            winner_pop = raw_data['winner_pop']
             all_spk_times, all_isis = spk_mon2spk_times(task_info, spksSE)
-            events, bursts, singles, spikes, downsample = spk_times2raster(task_info, all_spk_times,
-                                                                           broad_step=True, downsample=True)
-            # plot_fig2(task_info, events, bursts, spikes, stim1, stim2, stim_time, rate_winner, rate_loser, winner_pop, taskdir)
-            # plot_isis(task_info, *all_isis, task_dir=taskdir)
+            events, bursts, singles, spikes = spk_times2raster(task_info, all_spk_times, broad_step=True)
+
+            plot_fig2(task_info, events, bursts, spikes, stim, stim_time, rates_dec, winner_pop, taskdir)
+            plot_isis(task_info, *all_isis, task_dir=taskdir)
 
             computed = {'events': events, 'bursts': bursts, 'singles': singles, 'spikes': spikes,
-                        'events_low_def': downsample[0], 'bursts_low_def': downsample[1],
-                        'singles_low_def': downsample[2], 'spikes_low_def': downsample[3],
                         'isis': all_isis[0], 'ieis': all_isis[1], 'ibis': all_isis[2],
                         'cvs': all_isis[3], 'spks_per_burst': all_isis[4]}
 
@@ -166,7 +164,6 @@ class JobInfoExperiment(Experiment):
                 'seed_con': Parameter(1284),
                 'smooth_win': Parameter(50, 'ms'),
                 'valid_burst': Parameter(16e-3),
-                'cp_step': 10,
                 '2c_model': True,
                 'plt_fig1': True,
                 'burst_analysis': True,
@@ -182,7 +179,7 @@ class JobInfoExperiment(Experiment):
 
         param_ranges = {
             'c': ParameterArray(np_array([0])),     # np.linspace(-1, 1, 11)
-            'bfb': ParameterArray(np_array([0, 1, 10, 20, 40])),
+            'bfb': ParameterArray(np_array([0, 10, 20])),
             # 'targetB': ParameterArray(np_array([2]), 'Hz'),  # np.arange(1.5, 4.5, 0.5)
             'iter': ParameterArray(np.arange(0, 50))
         }
