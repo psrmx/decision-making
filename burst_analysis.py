@@ -11,8 +11,11 @@ def spk_mon2spk_times(task_info, spk_mon):
     valid_burst = task_info['sim']['valid_burst']*1e3
     mon_spk_times = spk_mon.spike_trains()
     sub = int(task_info['sen']['N_E'] * task_info['sen']['sub'])
-    nn_rec1 = np.random.randint(0, sub, size=100)
-    nn_rec2 = np.random.randint(sub, 2*sub, size=100)
+
+    # active neurons
+    active_n = np.array([n for n, spks in mon_spk_times.items() if len(spks) > 3])
+    nn_rec1 = np.random.choice(active_n[active_n < sub], size=100)
+    nn_rec2 = np.random.choice(active_n[active_n >= sub], size=100)
     nn_rec = np.hstack((nn_rec1, nn_rec2))              # random selection of neurons to work with
 
     # allocate variables
