@@ -3,7 +3,7 @@ from brian2.units import second
 from helper_funcs import unitless, handle_downsampled_spikes, smooth_rate
 
 
-def spk_mon2spk_times(task_info, spk_mon):
+def spk_mon2spk_times(task_info, spk_mon, nn2rec=50):
     """Calculates burst, event and single times from SpikeMonitor.spike_times(), following Naud & Sprekeler 2018."""
 
     # params
@@ -12,11 +12,11 @@ def spk_mon2spk_times(task_info, spk_mon):
     mon_spk_times = spk_mon.spike_trains()
     sub = int(task_info['sen']['N_E'] * task_info['sen']['sub'])
 
-    # active neurons
-    active_n = np.array([n for n, spks in mon_spk_times.items() if len(spks) > 3])
-    nn_rec1 = np.random.choice(active_n[active_n < sub], size=100)
-    nn_rec2 = np.random.choice(active_n[active_n >= sub], size=100)
-    nn_rec = np.hstack((nn_rec1, nn_rec2))              # random selection of neurons to work with
+    # random selection of active neurons
+    active_n = np.array([n for n, spks in mon_spk_times.items() if len(spks[spks >= settle_time]) >= 3])
+    nn_rec1 = np.random.choice(active_n[active_n < sub], size=nn2rec)
+    nn_rec2 = np.random.choice(active_n[active_n >= sub], size=nn2rec)
+    nn_rec = np.hstack((nn_rec1, nn_rec2))
 
     # allocate variables
     event_times = {}
@@ -30,56 +30,54 @@ def spk_mon2spk_times(task_info, spk_mon):
     mean_spks_per_burst = []
 
     for i, n in enumerate(nn_rec):
+        # get this_spks and ignore spks during settle_time
         this_spks = unitless(mon_spk_times[n].astype(np.float32), second, as_int=False)
-        this_spks = this_spks[this_spks >= settle_time]  # ignore spks during settle_time
-        this_spks -= settle_time
+        this_spks = this_spks[this_spks >= settle_time] - settle_time
 
-        if len(this_spks) > 0:
-            # count as burst if next spike is within 16 ms apart
-            isis = np.diff(this_spks)
-            isis = isis[isis > 0]*1e3
-            all_isis = np.hstack((np.zeros(1), isis, all_isis)).astype(np.float32)
-            is_burst = np.concatenate(([False], isis < valid_burst)).astype(np.int16)
-            is_burst_bool = is_burst.astype(bool)
-            is_event = np.logical_not(is_burst_bool).astype(np.int16)
-            nburst = 0
-            spks_per_burst = np.zeros(1, dtype='float32')
+        isis = np.diff(this_spks)
+        isis = isis[isis > 0]*1e3
+        all_isis = np.hstack((np.zeros(1), isis, all_isis)).astype(np.float32)
+        is_burst = np.concatenate(([False], isis < valid_burst)).astype(np.int16)
+        is_burst_bool = is_burst.astype(bool)
+        is_event = np.logical_not(is_burst_bool).astype(np.int16)
+        nburst = 0
+        spks_per_burst = np.zeros(1, dtype='float32')
 
-            if is_burst.any():
-                cv = isis.std() / isis.mean()
-                if not np.isnan(cv) and cv > 0:
-                    cvs.append(cv)
+        if is_burst.any():
+            cv = isis.std() / isis.mean()
+            if not np.isnan(cv) and cv > 0:
+                cvs.append(cv)
 
-                # add preceding burst
-                start_burst = np.where(np.diff(is_burst) == True)[0]
-                nburst = len(start_burst)
-                is_burst[start_burst] = 1
+            # add preceding burst
+            start_burst = np.where(np.diff(is_burst) == True)[0]
+            nburst = len(start_burst)
+            is_burst[start_burst] = 1
 
-                # count number of spikes in each burst
-                ibi = np.concatenate((start_burst, is_burst.shape))  # inter-burst-intervals markers
-                spks_per_burst = np.array([is_burst[ibi[b]:ibi[b + 1]].sum() for b in range(nburst)], dtype='float32')
-                spks_per_burst[spks_per_burst == 1] = 2  # sanity check, there's no 1 spk burst!
-                is_burst[is_burst_bool] = 0  # rmv consecutive burst spks
-                _ = [mean_spks_per_burst.append(spb) for spb in spks_per_burst]
+            # count number of spikes in each burst
+            ibi = np.concatenate((start_burst, is_burst.shape))  # inter-burst-intervals markers
+            spks_per_burst = np.array([is_burst[ibi[b]:ibi[b + 1]].sum() for b in range(nburst)], dtype='float32')
+            spks_per_burst[spks_per_burst == 1] = 2  # sanity check, there's no 1 spk burst!
+            is_burst[is_burst_bool] = 0  # rmv consecutive burst spks
+            _ = [mean_spks_per_burst.append(spb) for spb in spks_per_burst]
 
-            # get single spks
-            issingle = np.logical_and(is_burst == 0, is_event.astype(bool))
+        # get single spks
+        issingle = np.logical_and(is_burst == 0, is_event.astype(bool))
 
-            # sanity check
-            allspks = is_burst.sum() + issingle.sum() + spks_per_burst.sum() - nburst
-            assert allspks == len(this_spks), "Ups, sth is weird in the burst quantification :("
+        # sanity check
+        allspks = is_burst.sum() + issingle.sum() + spks_per_burst.sum() - nburst
+        assert allspks == len(this_spks), "Ups, sth is weird in the burst quantification :("
 
-            # get events, bursts, singles times
-            event_times[i] = this_spks[is_event.astype(bool)]
-            burst_times[i] = this_spks[is_burst.astype(bool)]
-            single_times[i] = this_spks[issingle.astype(bool)]
-            spike_times[i] = this_spks
+        # get events, bursts, singles times
+        event_times[i] = this_spks[is_event.astype(bool)]
+        burst_times[i] = this_spks[is_burst.astype(bool)]
+        single_times[i] = this_spks[issingle.astype(bool)]
+        spike_times[i] = this_spks
 
-            # isis in ms
-            ieis = np.diff(event_times[i])
-            ibis = np.diff(burst_times[i])
-            all_ieis = np.hstack((np.zeros(1), ieis[ieis > 0]*1e3, all_ieis)).astype(np.float32)
-            all_ibis = np.hstack((np.zeros(1), ibis[ibis > 0]*1e3, all_ibis)).astype(np.float32)
+        # isis in ms
+        ieis = np.diff(event_times[i])
+        ibis = np.diff(burst_times[i])
+        all_ieis = np.hstack((np.zeros(1), ieis[ieis > 0]*1e3, all_ieis)).astype(np.float32)
+        all_ibis = np.hstack((np.zeros(1), ibis[ibis > 0]*1e3, all_ibis)).astype(np.float32)
     all_isis = (all_isis[all_isis > 0], all_ieis[all_ieis > 0], all_ibis[all_ibis > 0],
                 np.array(cvs, dtype=np.float32), np.array(mean_spks_per_burst, dtype=np.float32))
     all_spk_times = (event_times, burst_times, single_times, spike_times)
