@@ -1,6 +1,6 @@
 # decisionmaking_snep
 
-Comparison of two pyramidal neuron models during a decision-making task. 
+Comparison of two pyramidal neuron models during a perceptual decision making task. 
 
 Uses [Brian2](https://brian2.readthedocs.io/en/stable/) to simulate spiking networks and [SNEP](https://gitlab.tubit.tu-berlin.de/mackwood/snep) to parallelize the simulations.
 
