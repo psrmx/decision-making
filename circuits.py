@@ -381,10 +381,10 @@ def mk_sen_stimulus(task_info, arrays=False):
     # set seed with np - for standalone mode brian's seed() is not sufficient!
     if task_info['sim']['replicate_stim']:
         # replicated stimuli across iters
-        np.random.seed(task_info['seed'])
+        np.random.seed(123)
     else:
         # every iter has different stimuli
-        np.random.seed()
+        np.random.seed(task_info['seed'])
 
     # TimedArray stim
     if not task_info['sim']['online_stim']:
@@ -411,6 +411,7 @@ def mk_sen_stimulus(task_info, arrays=False):
         # common and private part
         z1 = np.tile(get_OUstim(tps, tau), (nn, 1))
         z2 = np.tile(get_OUstim(tps, tau), (nn, 1))
+        np.random.seed(np.random.randint(10000))
         zk1 = get_OUstim(tps * nn, tau).reshape(nn, tps)
         zk2 = get_OUstim(tps * nn, tau).reshape(nn, tps)
 
