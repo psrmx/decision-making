@@ -11,7 +11,7 @@ from helper_funcs import np_array
 # cluster configuration
 config['cluster'] = config.run_on_cluster()
 username = 'paola'
-max_tasks = 150          # 260 cores in the server
+max_tasks = 100          # 260 cores in the server
 mem_per_task = 20.      # in GB, do a test with 32 GB then find optimal value
 max_task_time = None    # In HH:MM:SS, important if you want to jump ahead queue. For local run: None
 poll_interval = 2.      # in minutes
@@ -48,7 +48,7 @@ def run_hierarchical(task_info, taskdir, tempdir):
         net, monitors = cir.get_hierarchical_net(task_info)
 
     if not task_info['sim']['online_stim']:
-        Irec, stim1, stim2, stim_time = cir.mk_sen_stimulus(task_info, arrays=True)
+        Irec, stim1, stim2, stim_time, stim_fluc = cir.mk_sen_stimulus(task_info, arrays=True)
 
     print('Running simulation...')
     net.run(runtime, report='stdout', profile=True)
@@ -85,10 +85,10 @@ def run_hierarchical(task_info, taskdir, tempdir):
         # choice selection
         choice_monitors = monitors[1:5]
         rates_dec, rates_sen, winner_pop = choice_selection(task_info, choice_monitors)
-        raw_data = {'rates_dec': rates_dec, 'rates_sen': rates_sen, 'winner_pop': winner_pop}
-        stim = np.array([stim1.mean(axis=0), stim2.mean(axis=0)])
+        raw_data = {'rates_dec': rates_dec, 'rates_sen': rates_sen, 'winner_pop': winner_pop, 'stim_fluc': stim_fluc}
+        stim_diff = stim1.mean(axis=0) - stim2.mean(axis=0)
         if winner_pop:
-            stim = np.array([stim2.mean(axis=0), stim1.mean(axis=0)])
+            stim_diff = stim2.mean(axis=0) - stim1.mean(axis=0)
 
         if task_info['sim']['plt_fig1']:
             mon2plt = monitors.copy() + [stim1, stim2, stim_time]
@@ -99,7 +99,7 @@ def run_hierarchical(task_info, taskdir, tempdir):
             all_spk_times, all_isis = spk_mon2spk_times(task_info, spksSE)
             events, bursts, singles, spikes = spk_times2raster(task_info, all_spk_times, broad_step=True)
 
-            plot_fig2(task_info, events, bursts, spikes, stim, stim_time, rates_dec, winner_pop, taskdir)
+            plot_fig2(task_info, events, bursts, spikes, stim_diff, stim_time, rates_dec, winner_pop, taskdir)
             plot_isis(task_info, *all_isis, task_dir=taskdir)
 
             computed = {'events': events, 'bursts': bursts, 'singles': singles, 'spikes': spikes,
@@ -161,14 +161,16 @@ class JobInfoExperiment(Experiment):
                 'stim_off': Parameter(3, 'second'),
                 'replicate_stim': False,
                 'num_method': 'euler',
-                'seed_con': Parameter(1284),
+                'seed_con': Parameter(184),     # wimmer_good: 184, bad: 195
                 'smooth_win': Parameter(50, 'ms'),
                 'valid_burst': Parameter(16e-3),
                 '2c_model': True,
                 'plt_fig1': True,
                 'burst_analysis': True,
                 'plasticity': False,
-                'online_stim': False},
+                'online_stim': False,
+                'ramp_stim': True,
+                'flip_stim': False},
 
             'plastic': {
                 'tauB': Parameter(50000, 'ms'),
@@ -178,8 +180,8 @@ class JobInfoExperiment(Experiment):
                 'dec_winner_rate': Parameter(50, 'Hz')}}
 
         param_ranges = {
-            'c': ParameterArray(np_array([0])),     # np.linspace(-1, 1, 11)
-            'bfb': ParameterArray(np_array([0, 10, 20])),
+            'c': ParameterArray(np_array(np_array([0]))),     # np.linspace(0, 1, 6)
+            'bfb': ParameterArray(np_array([0, 20, 40])),
             # 'targetB': ParameterArray(np_array([2]), 'Hz'),  # np.arange(1.5, 4.5, 0.5)
             'iter': ParameterArray(np.arange(0, 50))
         }
@@ -188,6 +190,7 @@ class JobInfoExperiment(Experiment):
         self.tables.add_parameters(param_fixed)
         self.tables.add_parameter_ranges(param_ranges)
 
+        # c: [-1, -0.6, -0.3, -0.15, -0.07, 0, 0.07, 0.15, 0.3, 0.6, 1]
         # link between parameters, avoids unnecessary combinations
         # self.tables.link_parameter_ranges([('tau_update',), ('B0',)])
 
@@ -204,5 +207,4 @@ if __name__ == '__main__':
     job_info = run(JobInfoExperiment, ji_kwargs, username=username, max_tasks=max_tasks, mem_per_task=mem_per_task,
                    max_task_time=max_task_time, poll_interval=poll_interval,
                    result_dir='Documents/WS19/MasterThesis/Experiments',
-                   additional_files=['circuits.py', 'neuron_models.py', 'get_params.py', 'helper_funcs.py',
-                                     'burst_analysis.py', 'choice_analysis.py'])
+                   additional_files=['circuits.py', 'neuron_models.py', 'get_params.py', 'burst_analysis.py'])
