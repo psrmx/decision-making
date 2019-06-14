@@ -1,20 +1,20 @@
 import numpy as np
 from snep.utils import experiment_opener, filter_tasks
-from helper_funcs import plot_pop_averages, plot_fig2, get_winner_loser_trials, instantaneous_rate, choice_probability, pair_noise_corr
-from circuits import get_mean_stim
+from helper_funcs import get_this_time, get_winner_loser_trials, instant_rate, choice_probability, pair_noise_corr, \
+    plot_pop_averages, plot_fig2
 from tqdm import tqdm
 import pickle
 
 load_path = '/Users/PSR/Documents/WS19/MasterThesis/Experiments/run_hierarchical'
-# test_expers = ['2019-05-06-13h06m40s-50_trls-bfb_0_1_3',  '2019-05-14-17h24m15s']
-test_expers = ['2019-05-18-13h11m07s'] #, ''2019-05-14-17h57m19s']
+test_expers = ['2019-06-14-19h09m14s_naud_-50dend_adaptation']
+# test_expers = ['2019-06-04-16h47m04s']
 target_var = 'bfb'
-target_value = 0
+target_value = 10
 plt_show = True
 fig_extension = '.png'
 
 # analysis params
-compute_corr = True
+compute_corr = False
 step_cp = 10
 
 
@@ -31,6 +31,7 @@ def get_average_trials(tables_task_ids):
     :return:
     """
     from snep.tables.experiment import ExperimentTables
+    from brian2.units import ms
 
     for t, test in enumerate(tables_task_ids):
         tables, task_ids = tables_task_ids[test]
@@ -47,6 +48,7 @@ def get_average_trials(tables_task_ids):
 
         # params and allocate variables
         n_trials = len(target_ids)
+        is_winner_pop = np.zeros(n_trials, dtype=bool)
         pops, tps1 = tables.get_raw_data(target_ids[0], 'rates_dec').shape
         rates_dec = np.empty((n_trials, pops, tps1), dtype=np.float32)
         rates_sen = np.empty((n_trials, pops, tps1), dtype=np.float32)
@@ -56,75 +58,93 @@ def get_average_trials(tables_task_ids):
         events_av_per_trial = np.empty((int(2*nn), tps2), dtype=np.float32)
         tps_cp = int(tps2/step_cp)
         cp_av_per_trial = np.empty((nn, tps_cp), dtype=np.float32)
+        e_cp_av_per_trial = np.empty((nn, tps_cp), dtype=np.float32)
+        bf_cp_av_per_trial = np.empty((nn, tps_cp), dtype=np.float32)
         sub = int(nn / 2)
-        sub_corr = int(sub / 2)
-        nn_corr = np.hstack((np.arange(sub_corr), np.arange(nn - sub_corr, nn))).astype(dtype=np.int16)
-        corr = np.empty((sub, sub, tps_cp), dtype=np.float32)
-        rates_js = np.empty((sub, n_trials, tps_cp), dtype=np.float32)
+        corr = np.empty((nn, nn, int(tps_cp)), dtype=np.float32)
+        rates_js = np.empty((nn, n_trials, tps_cp), dtype=np.float32)
+        tps_stim = tables.get_raw_data(target_ids[0], 'stim_fluc').shape[0]
+        stim_fluc = np.empty((n_trials, tps_stim), dtype=np.float32)
 
         for n in tqdm(range(nn)):
             this_n_spikes = np.empty((n_trials, tps2), dtype=np.float32)
             this_n_bursts = np.empty((n_trials, tps2), dtype=np.float32)
             this_n_events = np.empty((n_trials, tps2), dtype=np.float32)
-            is_winner_pop = np.zeros(n_trials, dtype=bool)
 
             for i, tid in enumerate(target_ids):
                 if n == 0:
                     rates_dec[i] = tables.get_raw_data(tid, 'rates_dec')
                     rates_sen[i] = tables.get_raw_data(tid, 'rates_sen')
+                    stim_fluc[i] = tables.get_raw_data(tid, 'stim_fluc')
+                    winner_pop = tables.get_raw_data(tid, 'winner_pop')[0]
+                    if np.isclose(winner_pop, 0):
+                        is_winner_pop[i] = True
 
                     if compute_corr:
-                        for j, nj in enumerate(nn_corr):
-                            rates_js[j, i] = instantaneous_rate(params, tables.get_computed(tid, 'spikes')[nj],
-                                                                smooth_win=0.25)
+                        for nj in range(nn):
+                            rates_js[nj, i] = instant_rate(params, tables.get_computed(tid, 'spikes')[nj],
+                                                           smooth_win=0.25)
+
                 # retrieve spikes per neuron
                 this_n_spikes[i] = tables.get_computed(tid, 'spikes')[n]
                 this_n_bursts[i] = tables.get_computed(tid, 'bursts')[n]
                 this_n_events[i] = tables.get_computed(tid, 'events')[n]
-                winner_pop = tables.get_raw_data(tid, 'winner_pop')[0]
-                if winner_pop == np.floor(n/sub):
-                    is_winner_pop[i] = True
 
             # re-order winner pop
-            winner_spikes, loser_spikes = get_winner_loser_trials(this_n_spikes, is_winner_pop)
-            winner_bursts, loser_bursts = get_winner_loser_trials(this_n_bursts, is_winner_pop)
-            winner_events, loser_events = get_winner_loser_trials(this_n_events, is_winner_pop)
+            if np.isclose(n,  sub):
+                is_winner_pop = np.logical_not(is_winner_pop)
+            spikes1, spikes2 = get_winner_loser_trials(this_n_spikes, is_winner_pop)
+            bursts1, bursts2 = get_winner_loser_trials(this_n_bursts, is_winner_pop)
+            events1, events2 = get_winner_loser_trials(this_n_events, is_winner_pop)
 
             # fill average arrays
-            spikes_av_per_trial[n] = winner_spikes.mean(axis=0)
-            spikes_av_per_trial[nn+n] = loser_spikes.mean(axis=0)
-            bursts_av_per_trial[n] = winner_bursts.mean(axis=0)
-            bursts_av_per_trial[nn+n] = loser_bursts.mean(axis=0)
-            events_av_per_trial[n] = winner_events.mean(axis=0)
-            events_av_per_trial[nn+n] = loser_events.mean(axis=0)
+            spikes_av_per_trial[n] = spikes1.mean(axis=0)
+            spikes_av_per_trial[nn+n] = spikes2.mean(axis=0)
+            bursts_av_per_trial[n] = bursts1.mean(axis=0)
+            bursts_av_per_trial[nn+n] = bursts2.mean(axis=0)
+            events_av_per_trial[n] = events1.mean(axis=0)
+            events_av_per_trial[nn+n] = events2.mean(axis=0)
 
             # instantaneous rates and cps
-            winner_rates = instantaneous_rate(params, winner_spikes, smooth_win=0.1, step=step_cp)
-            loser_rates = instantaneous_rate(params, loser_spikes, smooth_win=0.1, step=step_cp)
-            cp_av_per_trial[n] = choice_probability(winner_rates, loser_rates)
+            rates1 = instant_rate(params, spikes1, smooth_win=0.1, step=step_cp)
+            rates2 = instant_rate(params, spikes2, smooth_win=0.1, step=step_cp)
+            cp_av_per_trial[n] = choice_probability(rates1, rates2)
+            e_rates1 = instant_rate(params, events1, smooth_win=0.1, step=step_cp)
+            e_rates2 = instant_rate(params, events2, smooth_win=0.1, step=step_cp)
+            e_cp_av_per_trial[n] = choice_probability(e_rates1, e_rates2)
+            b_rates1 = instant_rate(params, bursts1, smooth_win=0.1, step=step_cp)
+            b_rates2 = instant_rate(params, bursts2, smooth_win=0.1, step=step_cp)
+            bf1 = b_rates1 / e_rates1
+            bf1[np.isnan(bf1)] = 0  # handle division by zero
+            bf2 = b_rates2 / e_rates2
+            bf2[np.isnan(bf2)] = 0  # handle division by zero
+            bf_cp_av_per_trial[n] = choice_probability(bf1, bf2)
+            all_cps = [cp_av_per_trial, e_cp_av_per_trial, bf_cp_av_per_trial]
 
             # correlations
-            if compute_corr and (n < sub_corr or nn - sub_corr <= n < nn):
-                n_idx = n
-                if nn - sub_corr <= n < nn:
-                    n_idx = n - sub
-                for j in range(sub):
-                    corr[n_idx, j, :] = pair_noise_corr(rates_js[n_idx], rates_js[j])
+            if compute_corr:
+                for nj in range(nn):
+                    corr[n, nj, :] = pair_noise_corr(rates_js[n], rates_js[nj])
+
+        # stim
+        stim1, stim2 = get_winner_loser_trials(stim_fluc, np.logical_not(is_winner_pop))
+        stim_diff = stim1.mean(axis=0) - stim2.mean(axis=0)
+        stim_time = get_this_time(params, tps_stim, include_settle_time=True)
 
         # figures
-        corr_ii = np.concatenate((corr[:sub_corr, :sub_corr], corr[sub_corr:, sub_corr:]), axis=0).reshape(-1, tps_cp)
-        corr_ij = np.concatenate((corr[:sub_corr, sub_corr:], corr[sub_corr:, :sub_corr]), axis=0).reshape(-1, tps_cp)
-        mean_stim, stim_time = get_mean_stim(params, tps2)
-        plot_pop_averages(params, rates_dec, rates_sen, cp_av_per_trial, corr_ii, corr_ij, task_dir, '/fig1_'+fig_name)
+        corr_ii = np.concatenate((corr[:sub, :sub], corr[sub:, sub:]), axis=0).reshape(-1, tps_cp)
+        corr_ij = np.concatenate((corr[:sub, sub:], corr[sub:, :sub]), axis=0).reshape(-1, tps_cp)
+        plot_pop_averages(params, rates_dec, rates_sen, all_cps, corr_ii, corr_ij, task_dir, '/fig1_'+fig_name)
+        params['sim']['smooth_win'] = 100*ms
         plot_fig2(params, events_av_per_trial, bursts_av_per_trial, spikes_av_per_trial,
-                  mean_stim, stim_time, rates_dec.mean(axis=0), False, task_dir, '/fig2_'+fig_name)
+                  stim_diff, stim_time, rates_dec.mean(axis=0), False, task_dir, '/fig2_'+fig_name)
 
         # save variables
         file_name = task_dir + '/CPs_' + fig_name.replace(fig_extension, '.pkl')
         with open(file_name, 'wb') as f:
-                pickle.dump([rates_dec.mean(axis=0), rates_sen.mean(axis=0), cp_av_per_trial.mean(axis=0),
-                             np.nanmean(corr_ii, axis=0), np.nanmean(corr_ij, axis=0),
-                             events_av_per_trial, bursts_av_per_trial, spikes_av_per_trial], f)
+            pickle.dump([rates_dec.mean(axis=0), rates_sen.mean(axis=0), cp_av_per_trial.mean(axis=0),
+                         np.nanmean(corr_ii, axis=0), np.nanmean(corr_ij, axis=0),
+                         events_av_per_trial, bursts_av_per_trial, spikes_av_per_trial], f)
 
 
 if __name__ == '__main__':
