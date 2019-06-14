@@ -39,13 +39,11 @@ eqs_naud_dend = '''
     dV_d/dt = (-g_ea*(V_d-VrevE) -(V_d-Vl))/tau + (gCad/(1+exp(-(V_d/mV + 38)/6)) + w_d + K + Ibg)/Cm : volt
     dg_ea/dt = (-g_ea + x_ea) / tau_d       : 1
     dx_ea/dt = -x_ea / tau_r                : 1
-    dw_d/dt = (-w_d + awd * (V_d - Vl)) / tau_wd                        : amp
+    dw_d/dt = (-w_d + awd*(V_d-Vl)) / tau_wd                            : amp
     dIbg/dt = (muOUd - Ibg) / tauOU + (sigmaOU * xi) / sqrt(tauOU / 2)  : amp
     K = bpA * (((t-lastspike_soma) >= k1) * ((t-lastspike_soma) <= k2)) : amp
     tau = taud          : second
     Cm = Cmd            : farad
-    # muOUd               : amp
-    muOUd = -270*pA     : amp
     lastspike_soma      : second (linked)
 '''
 
@@ -53,6 +51,7 @@ eqs_plasticity = '''
     dB/dt = -B / tauB                               : 1
     dburst_start/dt = -burst_start / tau_burst      : 1 (unless refractory)
     dburst_stop/dt = -burst_stop / tau_burst        : 1
+    muOUd               : amp
 '''
 
 # Sensory stimulus group
