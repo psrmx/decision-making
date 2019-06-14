@@ -7,7 +7,7 @@ def spk_mon2spk_times(task_info, spk_mon, nn2rec=50):
     """Calculates burst, event and single times from SpikeMonitor.spike_times(), following Naud & Sprekeler 2018."""
 
     # params
-    settle_time = unitless(task_info['sim']['settle_time'], second, as_int=False)
+    settle_time = task_info['sim']['settle_time']
     valid_burst = task_info['sim']['valid_burst']*1e3
     mon_spk_times = spk_mon.spike_trains()
     sub = int(task_info['sen']['N_E'] * task_info['sen']['sub'])
@@ -30,9 +30,10 @@ def spk_mon2spk_times(task_info, spk_mon, nn2rec=50):
     mean_spks_per_burst = []
 
     for i, n in enumerate(nn_rec):
-        # get this_spks and ignore spks during settle_time
-        this_spks = unitless(mon_spk_times[n].astype(np.float32), second, as_int=False)
+        # ignore spks during settle_time and work with unitless spike_times
+        this_spks = mon_spk_times[n].astype(np.float32)
         this_spks = this_spks[this_spks >= settle_time] - settle_time
+        this_spks /= second
 
         isis = np.diff(this_spks)
         isis = isis[isis > 0]*1e3
