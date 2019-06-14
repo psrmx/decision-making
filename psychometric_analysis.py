@@ -4,13 +4,13 @@ from helper_funcs import plot_psychometric
 import pickle
 
 load_path = '/Users/PSR/Documents/WS19/MasterThesis/Experiments/run_hierarchical'
-test_expers = ['2019-04-29-18h06m50s', '2019-04-29-17h40m23s']
+test_expers = ['2019-06-14-19h09m14s_naud_-50dend_adaptation']
 plt_show = True
 fig_extension = '.png'
 
 
-@experiment_opener({'test_wimmer':  test_expers[0],
-                    'test_naud':  test_expers[1],
+@experiment_opener({# 'test_wimmer':  test_expers[0],
+                    'test_naud':  test_expers[0],
                     }, load_path, show=plt_show)
 def get_psychometric(tables_task_ids):
     """
@@ -38,7 +38,7 @@ def get_psychometric(tables_task_ids):
 
         for c, c_value in enumerate(c_ranges):    # linspace(-1, 1, 11):
             # filtertasks
-            targets = [{('c',): c_value}, ]
+            targets = [{('c',): c_value, ('bfb',): 0}, ]
             target_ids = filter_tasks(task_ids, targets)
 
             for i, tid in enumerate(target_ids):
@@ -46,9 +46,9 @@ def get_psychometric(tables_task_ids):
 
         # figures and save data
         plot_psychometric(c_ranges, winner_pops, task_dir, fig_name)
-        file_name = fig_name.replace(fig_extension, '-accuracy.pkl')
-        with open(file_name, 'wb'), as f:
-            pickle.dump([c_ranges, winner_pops])
+        file_name = task_dir + fig_name.replace(fig_extension, '-accuracy.pkl')
+        with open(file_name, 'wb') as f:
+            pickle.dump([c_ranges, winner_pops], f)
 
 
 if __name__ == '__main__':
