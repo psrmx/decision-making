@@ -22,11 +22,14 @@ def unitless(quantity, time_unit, as_int=True):
     return quantity / time_unit
 
 
-def get_OUstim(n, tau):
+def get_OUstim(n, tau, flip_stim=False):
     """Ornstein-Uhlenbeck process in discrete time"""
     a = np.exp(-(1 / tau))
     i = lfilter(np.ones(1), [1, -a], np.sqrt(1 - a**2) * np.random.randn(n))
-    return np.asanyarray(i, dtype=np.float32)
+    i = np.asanyarray(i, dtype=np.float32)
+    if flip_stim:
+        i = np.flip(i, axis=0)
+    return i
 
 
 def get_this_dt(task_params, tps, include_settle_time=False):
@@ -37,9 +40,11 @@ def get_this_dt(task_params, tps, include_settle_time=False):
     return np.round((runtime - settle_time)/tps, decimals=4)
 
 
-def get_this_time(task_params, tps):
+def get_this_time(task_params, tps, include_settle_time=False):
     settle_time = unitless(task_params['sim']['settle_time'], second, as_int=False)
     runtime = unitless(task_params['sim']['runtime'], second, as_int=False)
+    if include_settle_time:
+        return np.linspace(0, runtime, tps, dtype=np.float32)
     return np.linspace(0, runtime-settle_time, tps, dtype=np.float32)
 
 
@@ -60,15 +65,13 @@ def handle_downsampled_spikes(spk_times):
     return spk_times.astype(np.int16)
 
 
-def instantaneous_rate(task_info, spikes, smooth_win=None, step=10):
+def instant_rate(task_info, spikes, smooth_win=None, step=10):
     """computes the instantaneous spike count for a neuron at each trl"""
     if not smooth_win:
         smooth_win = unitless(task_info['sim']['smooth_win'], second, as_int=False)
-    try:
-        n_trials, tps = spikes.shape
-    except ValueError:
+    if len(spikes.shape) < 2:
         spikes = spikes[np.newaxis, :]
-        n_trials, tps = spikes.shape
+    n_trials, tps = spikes.shape
     new_dt = get_this_dt(task_info, tps)
     time = get_this_time(task_info, tps)
     time_low_def = get_this_time(task_info, int(tps/step))
@@ -163,10 +166,14 @@ def choice_probability(winner_trials, loser_trials, step=1):
     return cp
 
 
-def pair_noise_corr(rates1, rates2):
+def pair_noise_corr(rates1, rates2, step=1):
     """computes Pearson correlation of rate1 and rate2 across trials at each timepoint"""
     tps = rates1.shape[-1]
-    corr = np.diagonal(np.corrcoef(rates1, rates2, rowvar=False)[:tps, tps:])
+    corr = np.empty(int(tps/step), dtype=np.float32)
+    for t in np.linspace(0, tps-step, int(tps/step), dtype=np.int16):
+        r1 = rates1[:, t:t+step].flatten()
+        r2 = rates2[:, t:t+step].flatten()
+        corr[int(t/step)] = np.corrcoef(r1, r2)[0, 1]
     return corr
 
 
@@ -191,12 +198,15 @@ def save_figure(task_dir, fig, fig_name, tight=True):
 def plot_psychometric(stimuli, winner_pops, task_dir, fig_name):
     sns.set(context=cntxt, style='darkgrid')
 
-    fig = plt.figure(figsize=(4, 3))
+    n_trials = winner_pops.shape[1]
+    sem = winner_pops.std(axis=1)*100 / np.sqrt(n_trials)
+    fig = plt.figure(figsize=(3, 2.5), dpi=300)
     plt.title('Psychometric curve')
-    plt.plot(stimuli, winner_pops.mean(axis=1), '.-', color='C4', lw=2)
-    plt.xticks(np.linspace(min(stimuli), max(stimuli), 5))
-    plt.xlabel('Coherence level')
-    plt.ylabel('Accuracy')
+    plt.errorbar(x=stimuli*100, y=winner_pops.mean(axis=1)*100, yerr=sem, fmt='.-', lw=1, capsize=1,
+                 color='xkcd:plum', ecolor='xkcd:coral',)
+    plt.xticks(np.linspace(min(stimuli), max(stimuli), 5)*100)
+    plt.xlabel(r'$Coherence$ (%)')
+    plt.ylabel(r'$\%$ $correct$')
     save_figure(task_dir, fig, fig_name)
 
 
@@ -277,7 +287,7 @@ def plot_fig1(task_info, monitors, task_dir):
     save_figure(task_dir, fig1, '/figure1.png', tight=False)
 
 
-def plot_fig2(task_info, events, bursts, spikes, stim, stim_time, rates_dec, winner_pop, task_dir, fig_name='/figure2.png'):
+def plot_fig2(task_info, events, bursts, spikes, stim_diff, stim_time, rates_dec, winner_pop, task_dir, fig_name='/figure2.png'):
     sns.set(context=cntxt, style='darkgrid')
 
     nn, tps = events.shape
@@ -285,12 +295,12 @@ def plot_fig2(task_info, events, bursts, spikes, stim, stim_time, rates_dec, win
     smooth_win = unitless(task_info['sim']['smooth_win'], second, as_int=False)
     time = get_this_time(task_info, tps)
     new_dt = get_this_dt(task_info, tps)
-    _, stim_tps = stim.shape
+    stim_tps = stim_diff.shape[0]
     if tps != stim_tps:
         stim_dt = get_this_dt(task_info, stim_tps, include_settle_time=True)
         settle_time_idx = int(unitless(task_info['sim']['settle_time'], second, as_int=False) / stim_dt)
-        stim = stim[:, settle_time_idx:]
-        stim_time = stim_time[:stim.shape[-1]]
+        stim_diff = stim_diff[settle_time_idx:]
+        stim_time = stim_time[:stim_diff.shape[-1]]
     if winner_pop:
         events = reorder_winner_pop(events, stack=True)
         bursts = reorder_winner_pop(bursts, stack=True)
@@ -304,46 +314,46 @@ def plot_fig2(task_info, events, bursts, spikes, stim, stim_time, rates_dec, win
     v_dend = 73*mV
     nrows, ncols = (3, 2)
 
-    fig2, axs = plt.subplots(nrows, ncols, figsize=(int(8 * ncols), int(2 * nrows)), dpi=100, sharex=True)
-    axs[0, 0].plot(stim_time, stim[0]*1e12, color='C3', lw=1, label='winner')
-    axs[0, 0].plot(stim_time, stim[1]*1e12, color='C0', lw=1, label='loser')
-    axs[0, 0].set_ylabel(r'$I_{soma}$ (pA)')
+    fig2, axs = plt.subplots(nrows, ncols, figsize=(int(6 * ncols), int(2 * nrows)), dpi=100, sharex=True)
+    stim_kernel = smooth_rate(stim_diff, smooth_win, new_dt)
+    axs[0, 0].plot(stim_time, stim_kernel, color='black', lw=1.5)
+    axs[0, 0].set_ylabel(r'$stim$ $strength$ (au)')
     axs[0, 0].set_xlim(time[0], time[-1])
 
     f_rate1, f_rate2 = smooth_rate(spikes, smooth_win, new_dt, sub)
-    axs[1, 0].plot(time, f_rate1, lw=1, color='C5', label='winner')
-    axs[1, 0].plot(time, f_rate2, lw=1, color='gray', label='loser')
+    axs[1, 0].plot(time, f_rate1, lw=1.5, color='C2', label='pref')
+    axs[1, 0].plot(time, f_rate2, lw=1.5, color='gray', label='non-pref')
     axs[1, 0].set_ylabel(r'$A$ (Hz)')
-    axs[1, 0].set_ylim(0, 30)
+    axs[1, 0].set_ylim(0, 15)
 
     e_rate1, e_rate2 = smooth_rate(events, smooth_win, new_dt, sub)
-    axs[2, 0].plot(time, e_rate1, lw=1, color='C2', label='winner')
-    axs[2, 0].plot(time, e_rate2, lw=1, color='gray', label='loser')
+    axs[2, 0].plot(time, e_rate1, lw=1.5, color='xkcd:cerulean', label='pref')
+    axs[2, 0].plot(time, e_rate2, lw=1.5, color='gray', label='non-pref')
     axs[2, 0].set_ylabel(r'$E$ (Hz)')
     axs[2, 0].set_xlabel(r'$Time$ (s)')
-    axs[2, 0].set_ylim(0, 25)
+    axs[2, 0].set_ylim(0, 15)
 
     top_down1 = n_dec * 0.2 * rates_dec[0] * (1*ms) * g * v_dend
     top_down2 = n_dec * 0.2 * rates_dec[1] * (1*ms) * g * v_dend
-    axs[0, 1].plot(time2, top_down1/pA, color='C3', lw=1, label='winner')
-    axs[0, 1].plot(time2, top_down2/pA, color='C0', lw=1, label='loser')
+    axs[0, 1].plot(time2, top_down1/pA, color='C3', lw=1.5, label='pref')
+    axs[0, 1].plot(time2, top_down2/pA, color='C0', lw=1.5, label='non-pref')
     axs[0, 1].set_ylabel(r'$I_{top-down}$ (pA)')
 
     b_rate1, b_rate2 = smooth_rate(bursts, smooth_win, new_dt, sub)
-    axs[1, 1].plot(time, b_rate1, lw=1, color='C1', label='winner')
-    axs[1, 1].plot(time, b_rate2, lw=1, color='gray', label='loser')
+    axs[1, 1].plot(time, b_rate1, lw=1.5, color='C1', label='pref')
+    axs[1, 1].plot(time, b_rate2, lw=1.5, color='gray', label='non-pref')
     axs[1, 1].set_ylabel(r'$B$ (Hz)')
     axs[1, 1].set_ylim(0, 4)
 
-    bfracc1 = b_rate1 / e_rate1
-    bfracc1[np.isnan(bfracc1)] = 0  # handle division by zero
-    bfracc2 = b_rate2 / e_rate2
-    bfracc2[np.isnan(bfracc2)] = 0  # handle division by zero
-    axs[2, 1].plot(time, bfracc1*100, lw=1, color='C6', label='winner')
-    axs[2, 1].plot(time, bfracc2*100, lw=1, color='gray', label='loser')
+    bf1 = b_rate1 / e_rate1
+    bf1[np.isnan(bf1)] = 0  # handle division by zero
+    bf2 = b_rate2 / e_rate2
+    bf2[np.isnan(bf2)] = 0  # handle division by zero
+    axs[2, 1].plot(time, bf1*100, lw=1.5, color='xkcd:light red', label='pref')
+    axs[2, 1].plot(time, bf2*100, lw=1.5, color='gray', label='non-pref')
     axs[2, 1].set_ylabel(r'$F$ (%)')
     axs[2, 1].set_xlabel(r'$Time$ (s)')
-    # axs[2, 1].set_ylim(0, 100)
+    axs[2, 1].set_ylim(0, 50)
 
     for r in range(nrows):
         axs[r, 1].legend(loc='best', ncol=2, fontsize='xx-small')
@@ -565,8 +575,9 @@ def plot_plastic_check(task_info, pop_dend1, spks_dend, bursts, burst_times, tas
     save_figure(task_dir, fig5, '/fig5-sanity_check.png', tight=True)
 
 
-def plot_pop_averages(task_info, rates_dec, rates_sen, cps, corr_ii, corr_ij, task_dir, fig_name='/fig1_averages.png'):
+def plot_pop_averages(task_info, rates_dec, rates_sen, all_cps, corr_ii, corr_ij, task_dir, fig_name='/fig1_averages.png'):
     sns.set(context=cntxt, style='darkgrid')
+    cps, e_cps, bf_cps = all_cps
     _, pops, tps1 = rates_dec.shape
     tps2 = cps.shape[-1]
     tps3 = corr_ii.shape[-1]
@@ -584,7 +595,7 @@ def plot_pop_averages(task_info, rates_dec, rates_sen, cps, corr_ii, corr_ij, ta
     plt.plot(time1, rates_dec[:, 1, :].mean(axis=0), c='C0', lw=1.5, label='non-pref')
     plt.axvline(x=stim_on, color='gray', ls='dashed', lw=1)
     plt.axvline(x=stim_off, color='gray', ls='dashed', lw=1)
-    plt.ylim(0, 50)
+    plt.ylim(0, 40)
     plt.title('Integration circuit')
     plt.ylabel(r'$Population$ $rate$ (sp/sec)', {'horizontalalignment': 'right'})
 
@@ -594,13 +605,16 @@ def plot_pop_averages(task_info, rates_dec, rates_sen, cps, corr_ii, corr_ij, ta
     plt.plot(time1, rates_sen[:, 1, :].mean(axis=0), c='C0', lw=1.5, label='non-pref')
     plt.axvline(x=stim_on, color='gray', ls='dashed', lw=1)
     plt.axvline(x=stim_off, color='gray', ls='dashed', lw=1)
-    plt.ylim(0, 25)
+    plt.ylim(0, 15)
     plt.legend(loc='upper right', ncol=2, fontsize='x-small')
 
     fig.add_axes(axs[2])
-    plt.plot(time2, cps.mean(axis=0), c='black', lw=1.5)
+    plt.plot(time2, cps.mean(axis=0), c='black', lw=1.5, label='A')
+    plt.plot(time2, e_cps.mean(axis=0), c='xkcd:cerulean', lw=1.5, label='E')
+    plt.plot(time2, bf_cps.mean(axis=0), c='xkcd:light red', lw=1.5, label='F')
     plt.axvline(x=stim_on, color='gray', ls='dashed', lw=1)
     plt.axvline(x=stim_off, color='gray', ls='dashed', lw=1)
+    plt.legend(loc='upper right', ncol=3, fontsize='x-small')
     plt.ylabel(r'$Choice$ $prob.$')
     plt.ylim(0.41, 0.61)
 

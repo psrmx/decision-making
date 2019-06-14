@@ -69,6 +69,7 @@ def get_sen_params(task_info):
 
     # external connections
     epsX = 0.32             # connection probability for ext synapses
+    # epsX = 0.08
     alphaX = 0              # 0: global input, 1: local input
     gXE = 1.7076*nS         # weight of XE synapses
     gXI = gXE               # weight of XI synapses
@@ -105,10 +106,11 @@ def get_2c_params(task_info):
     """Parameters for two compartmental model of excitatory neurons within the sensory circuit."""
     # soma
     Cms = 370*pF            # capacitance
-    taus = 14.97*ms         # timescale of membrane potential, original 16*ms
+    taus = 16*ms            # timescale of membrane potential, original 16*ms --> tau = 14
     gleakEs = Cms/taus
     tauws = 100*ms          # timescale of recovery ("slow") variable
-    bws = -200*pA           # strength of spike-triggered facilitation (bws < 0)
+    # bws = -200*pA           # strength of spike-triggered adaptation (bws < 0)
+    bws = 0*pA
     gCas = 1300*pA          # strength of forward calcium spike propagation
     tau_refE = 3*ms         # refractory period is 1*ms longer
 
@@ -117,27 +119,29 @@ def get_2c_params(task_info):
     taud = 7*ms
     gleakEd = Cmd/taud
     tauwd = 30*ms           # timescale of recovery ("slow") variable
-    awd = -13*nS            # strength of sub-threshold facilitation (awd < 0)
+    # awd = -13*nS            # strength of sub-threshold adaptation (awd < 0)
+    awd = -50*nS
     gCad = 1200*pA          # strength of local regenerative activity
     bpA = 2600*pA           # strength of back-propagation activity (c variable)
     k1 = 0.5*ms             # rectangular kernel for back-propagating activity
     k2 = 2.5*ms             # if t in [0.5, 2.5] we'll have back-propagating current
 
     # external/background noise
-    muOUs = 70*pA           # drift of OU for soma
+    muOUs = 70*pA           # drift of OU background noise for soma
+    muOUd = -270*pA         # drift of OU background noise for dendrites
     sigmaOU = 450*pA        # diffusion of OU process
-    # sigmaOU = 0 * pA  # diffusion of OU process
     tauOU = 2*ms            # timescale of OU process
 
     # synapse models
-    VrevIsd = -70*mV        # rev potential for I synapses in soma, dend
+    # VrevId = -70*mV        # rev potential for I synapses in soma, dend
+    VrevIsd = -80*mV
 
     # previous sensory namespace
     param_wimmer = get_sen_params(task_info)
     param_naud = {'gleakE': gleakEs, 'gleakEd': gleakEd, 'Cms': Cms, 'Cmd': Cmd, 'VrevIsd': VrevIsd,
                   'taus': taus, 'taud': taud, 'tau_refE': tau_refE, 'tau_ws': tauws, 'tau_wd': tauwd,
                   'bws': bws, 'awd': awd, 'gCas': gCas, 'gCad': gCad, 'bpA': bpA, 'k1': k1, 'k2': k2,
-                  'muOUs': muOUs, 'tauOU': tauOU, 'sigmaOU': sigmaOU}
+                  'muOUs': muOUs, 'muOUd': muOUd, 'sigmaOU': sigmaOU, 'tauOU': tauOU}
 
     # merge dictionaries, order matters because previous variables get updated
     paramsen = {**param_wimmer, **param_naud}
@@ -145,7 +149,8 @@ def get_2c_params(task_info):
     # re-adjust synaptic conductance
     for gx in ['gEE', 'gIE', 'gXE']:
         paramsen[gx] = adjust_variable(param_wimmer[gx], param_wimmer['gleakE'], gleakEs)
-    # paramsen['gXE'] = 2.45*nS   # scaled: 2.527, lower_bound: 2.17. prev 2.4602 --> 550 pA
+    # paramsen['gXE'] = 2.7*nS   # scaled: 2.527, lower_bound: 2.17. prev 2.4602 --> 550 pA
+    # paramsen['gIE'] = 25*nS       # wimmer: 12.6491*nS, scaled:18.7
 
     return paramsen
 
@@ -169,9 +174,9 @@ def get_stim_params(task_info):
     # adjust external current
     if task_info['sim']['2c_model']:
         paramsen = get_2c_params(task_info)
-        I0 = 100*pA
-        # I0 = adjust_variable(I0, paramsen['CmE'], paramsen['Cms'])  # 160*pA
-        # I0_wimmer = I0  # makes sure the variance of the noise is also scaled!
+        # I0 = 150*pA
+        I0 = adjust_variable(I0, paramsen['CmE'], paramsen['Cms'])
+        I0_wimmer = I0              # scales variance of OU too!
 
     paramstim = {'c': c, 'I0': I0, 'I0_wimmer': I0_wimmer, 'mu1': mu1, 'mu2': mu2,  'tau_stim': tau_stim,
                  'stim_dt': stim_dt, 'sigma_stim': sigma_stim, 'sigma_ind': sigma_ind}
@@ -182,7 +187,7 @@ def get_stim_params(task_info):
 def get_fffb_params(task_info):
     """Parameters for creating feedforward and feedback synapses for the hierachical network."""
     eps = 0.2                   # connection probability
-    d = 1 * ms                  # transmission delays of E synapses
+    d = 1*ms                    # transmission delays of E synapses
     w_ff = 0.0036               # weight of ff synapses, 0.09 nS when scaled by gleakE of dec_circuit
     w_fb = 0.004                # weight of fb synapses, 0.0668 nS when scaled by gleakE of sen_circuit_wimmer
     b_fb = task_info['bfb']     # feedback strength, between 0 and 6

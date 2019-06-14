@@ -26,6 +26,7 @@ def get_hierarchical_net(task_info):
     fffb_synapses = mk_fffb_synapses(task_info, dec_subgroups, sen_subgroups)
 
     seed(task_info['seed'])
+    # seed(1657831915)
     dec_groups = init_conds_dec(dec_groups)
     sen_groups = init_conds_sen(sen_groups, two_comp=task_info['sim']['2c_model'])
     monitors = mk_monitors(task_info, dec_groups, sen_groups, dec_subgroups, sen_subgroups)
@@ -58,7 +59,7 @@ def mk_dec_circuit(task_info):
     N_E = task_info['dec']['N_E']       # number of exc neurons (1600)
     N_I = task_info['dec']['N_I']       # number of inh neurons (400)
     sub = task_info['dec']['sub']       # fraction of stim-selective exc neurons
-    N_D1 = int(N_E * sub)               # size of exc sub-pop D1
+    N_D1 = int(N_E * sub)               # size of exc sub-pop D1, D2
     N_D2 = N_D1                         # size of exc sub-pop D2
     N_D3 = int(N_E * (1 - 2 * sub))     # size of exc sub-pop D3, the rest
     num_method = task_info['sim']['num_method']
@@ -394,8 +395,9 @@ def mk_sen_stimulus(task_info, arrays=False):
         runtime = unitless(task_info['sim']['runtime'], stim_dt)
         stim_on = unitless(task_info['sim']['stim_on'], stim_dt)
         stim_off = unitless(task_info['sim']['stim_off'], stim_dt)
+        flip_stim = task_info['sim']['ramp_stim']
+        stim_time = get_this_time(task_info, runtime, include_settle_time=True)
         tps = stim_off - stim_on                             # total stim points
-        stim_time = np.linspace(0, unitless(task_info['sim']['runtime'], second, as_int=False), runtime)
 
         # stimulus namespace
         paramstim = params.get_stim_params(task_info)
@@ -405,49 +407,41 @@ def mk_sen_stimulus(task_info, arrays=False):
         I0_wimmer = paramstim['I0_wimmer']
         mu1 = paramstim['mu1']
         mu2 = paramstim['mu2']
+        if task_info['sim']['ramp_stim']:
+            # smooth the stim onset with a positive exponential decay
+            tau_ramp = 20e-3 / unitless(stim_dt, second, as_int=False)
+            mu1 *= (1 - np.exp(-np.arange(tps) / tau_ramp))
+            mu2 *= (1 - np.exp(-np.arange(tps) / tau_ramp))
+            mu1 = mu1[None, :]
+            mu2 = mu2[None, :]
         sigma_stim = paramstim['sigma_stim']
         sigma_ind = paramstim['sigma_ind']
 
         # common and private part
-        z1 = np.tile(get_OUstim(tps, tau), (nn, 1))
-        z2 = np.tile(get_OUstim(tps, tau), (nn, 1))
+        z1 = np.tile(get_OUstim(tps, tau, flip_stim), (nn, 1))
+        z2 = np.tile(get_OUstim(tps, tau, flip_stim), (nn, 1))
         np.random.seed(np.random.randint(10000))
-        zk1 = get_OUstim(tps * nn, tau).reshape(nn, tps)
-        zk2 = get_OUstim(tps * nn, tau).reshape(nn, tps)
+        zk1 = get_OUstim(tps * nn, tau, flip_stim).reshape(nn, tps)
+        zk2 = get_OUstim(tps * nn, tau, flip_stim).reshape(nn, tps)
 
         # stim2TimedArray with zero padding if necessary
         i1 = I0 + I0_wimmer * (c * mu1 + sigma_stim * z1 + sigma_ind * zk1)
         i2 = I0 + I0_wimmer * (c * mu2 + sigma_stim * z2 + sigma_ind * zk2)
         stim1 = i1.T.astype(np.float32)
         stim2 = i2.T.astype(np.float32)
-        i1t = np.concatenate((np.zeros((stim_on, nn), dtype=np.float32), stim1,
-                              np.zeros((runtime - stim_off, nn), dtype=np.float32)), axis=0).astype(np.float32)
-        i2t = np.concatenate((np.zeros((stim_on, nn), dtype=np.float32), stim2,
-                              np.zeros((runtime - stim_off, nn), dtype=np.float32)), axis=0).astype(np.float32)
+        i1t = np.concatenate((np.zeros((stim_on, nn)), stim1,
+                              np.zeros((runtime - stim_off, nn))), axis=0).astype(np.float32)
+        i2t = np.concatenate((np.zeros((stim_on, nn)), stim2,
+                              np.zeros((runtime - stim_off, nn))), axis=0).astype(np.float32)
         Irec = TimedArray(np.concatenate((i1t, i2t), axis=1)*amp, dt=stim_dt)
 
         if arrays:
             stim1 = i1t.T.astype(np.float32)
             stim2 = i2t.T.astype(np.float32)
-            return Irec, stim1, stim2, stim_time
+            stim_fluc = np.hstack((np.zeros(stim_on), z1[0] - z2[0], np.zeros(runtime-stim_off)))
+            return Irec, stim1, stim2, stim_time, stim_fluc
 
         return Irec
-
-
-def get_mean_stim(task_info, tps):
-    """simple way to calculate the stimulus given without the noise"""
-    stim_dt = get_this_dt(task_info, tps)
-    time = get_this_time(task_info, tps)
-    settle_time = unitless(task_info['sim']['settle_time'], second, as_int=False)
-    runtime = (unitless(task_info['sim']['runtime'], second, as_int=False) - settle_time) / stim_dt
-    stim_on_idx = (unitless(task_info['sim']['stim_on'], second, as_int=False) - settle_time) / stim_dt
-    stim_off_idx = (unitless(task_info['sim']['stim_off'], second, as_int=False) - settle_time) / stim_dt
-    I0 = params.get_stim_params(task_info)['I0']
-    stim = np.concatenate((np.zeros((2, int(stim_on_idx))),
-                          np.ones((2, int(stim_off_idx-stim_on_idx)))*I0,
-                          np.zeros((2, int(runtime-stim_off_idx)))), axis=1)
-
-    return stim, time
 
 
 def mk_fffb_synapses(task_info, dec_subgroups, sen_subgroups):
@@ -526,15 +520,21 @@ def init_conds_dec(dec_groups):
 
 def init_conds_sen(sen_groups, two_comp=False, plastic=False):
     if two_comp:
-        sen_groups['SE'].V = '-70*mV + 2*mV * rand()'
-        sen_groups['SI'].V = '-70*mV + 2*mV * rand()'
+        # sen_groups['SE'].V = '-70*mV + 2*mV * rand()'
+        # sen_groups['SI'].V = '-70*mV + 2*mV * rand()'
+        sen_groups['SE'].V = '-52*mV + 2*mV*rand()'
+        sen_groups['SI'].V = '-52*mV + 2*mV*rand()'
+        sen_groups['SE'].g_ea = '0.05 * (1 + 0.2*rand())'
+        sen_groups['SI'].g_ea = '0.05 * (1 + 0.2*rand())'
         if not plastic:
             pass
             # last_muOUd = np.loadtxt('last_muOUd.csv')
             # sen_groups['dend'].muOUd = np.tile(last_muOUd, 2) * amp
     else:
-        sen_groups['SE'].V = '-50*mV + 2*mV * rand()'
-        sen_groups['SI'].V = '-50*mV + 2*mV * rand()'
+        sen_groups['SE'].V = '-52*mV + 2*mV*rand()'
+        sen_groups['SI'].V = '-52*mV + 2*mV*rand()'
+        sen_groups['SE'].g_ea = '0.05 * (1 + 0.2*rand())'
+        sen_groups['SI'].g_ea = '0.05 * (1 + 0.2*rand())'
 
     return sen_groups
 
