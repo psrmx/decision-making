@@ -11,7 +11,7 @@ from helper_funcs import np_array
 # cluster configuration
 config['cluster'] = config.run_on_cluster()
 username = 'paola'
-max_tasks = 100          # 260 cores in the server
+max_tasks = 200          # 260 cores in the server
 mem_per_task = 20.      # in GB, do a test with 32 GB then find optimal value
 max_task_time = None    # In HH:MM:SS, important if you want to jump ahead queue. For local run: None
 poll_interval = 2.      # in minutes
@@ -64,6 +64,7 @@ def run_hierarchical(task_info, taskdir, tempdir):
 
     # results
     computed = np.zeros(1, dtype=np.float32)
+    sim_state = np.zeros(1, dtype=np.float32)
 
     if task_info['sim']['plasticity']:
         spksSE = monitors[0]
@@ -92,7 +93,7 @@ def run_hierarchical(task_info, taskdir, tempdir):
 
         if task_info['sim']['plt_fig1']:
             mon2plt = monitors.copy() + [stim1, stim2, stim_time]
-            plot_fig1(task_info, mon2plt, taskdir)
+            sim_state = plot_fig1(task_info, mon2plt, taskdir, save_vars=True)
 
         if task_info['sim']['burst_analysis']:
             spksSE = monitors[0]
@@ -108,7 +109,7 @@ def run_hierarchical(task_info, taskdir, tempdir):
 
     results = {
         'raw_data': raw_data,
-        'sim_state': np.zeros(1, dtype=np.float32),
+        'sim_state': sim_state,
         'computed': computed}
 
     return results
@@ -166,7 +167,7 @@ class JobInfoExperiment(Experiment):
                 'valid_burst': Parameter(16e-3),
                 '2c_model': True,
                 'plt_fig1': True,
-                'burst_analysis': True,
+                'burst_analysis': False,
                 'plasticity': False,
                 'online_stim': False,
                 'ramp_stim': True,
@@ -181,9 +182,9 @@ class JobInfoExperiment(Experiment):
 
         param_ranges = {
             'c': ParameterArray(np_array(np_array([0]))),     # np.linspace(0, 1, 6)
-            'bfb': ParameterArray(np_array([0, 20, 40])),
+            'bfb': ParameterArray(np_array([0])),
             # 'targetB': ParameterArray(np_array([2]), 'Hz'),  # np.arange(1.5, 4.5, 0.5)
-            'iter': ParameterArray(np.arange(0, 50))
+            'iter': ParameterArray(np.arange(0, 2))
         }
 
         # add params to tables

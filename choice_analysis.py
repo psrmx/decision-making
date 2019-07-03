@@ -6,8 +6,7 @@ from tqdm import tqdm
 import pickle
 
 load_path = '/Users/PSR/Documents/WS19/MasterThesis/Experiments/run_hierarchical'
-test_expers = ['2019-06-14-19h09m14s_naud_-50dend_adaptation']
-# test_expers = ['2019-06-04-16h47m04s']
+test_expers = ['2019-07-01-10h41m40s-naud_tuned_2000trls_bfb010']
 target_var = 'bfb'
 target_value = 10
 plt_show = True
@@ -142,9 +141,13 @@ def get_average_trials(tables_task_ids):
         # save variables
         file_name = task_dir + '/CPs_' + fig_name.replace(fig_extension, '.pkl')
         with open(file_name, 'wb') as f:
-            pickle.dump([rates_dec.mean(axis=0), rates_sen.mean(axis=0), cp_av_per_trial.mean(axis=0),
+            pickle.dump([rates_dec.mean(axis=0), rates_sen.mean(axis=0),
+                         rates_dec.std(axis=0), rates_sen.std(axis=0),
                          np.nanmean(corr_ii, axis=0), np.nanmean(corr_ij, axis=0),
-                         events_av_per_trial, bursts_av_per_trial, spikes_av_per_trial], f)
+                         np.nanstd(corr_ii, axis=0), np.nanstd(corr_ij, axis=0),
+                         cp_av_per_trial, e_cp_av_per_trial, bf_cp_av_per_trial,
+                         events_av_per_trial, bursts_av_per_trial, spikes_av_per_trial,
+                         stim_diff], f)
 
 
 if __name__ == '__main__':

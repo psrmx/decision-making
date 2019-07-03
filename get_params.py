@@ -120,7 +120,7 @@ def get_2c_params(task_info):
     gleakEd = Cmd/taud
     tauwd = 30*ms           # timescale of recovery ("slow") variable
     # awd = -13*nS            # strength of sub-threshold adaptation (awd < 0)
-    awd = -50*nS
+    awd = -30*nS
     gCad = 1200*pA          # strength of local regenerative activity
     bpA = 2600*pA           # strength of back-propagation activity (c variable)
     k1 = 0.5*ms             # rectangular kernel for back-propagating activity
@@ -133,7 +133,7 @@ def get_2c_params(task_info):
     tauOU = 2*ms            # timescale of OU process
 
     # synapse models
-    # VrevId = -70*mV        # rev potential for I synapses in soma, dend
+    # VrevIsd = -70*mV        # rev potential for I synapses in soma, dend
     VrevIsd = -80*mV
 
     # previous sensory namespace
@@ -151,6 +151,7 @@ def get_2c_params(task_info):
         paramsen[gx] = adjust_variable(param_wimmer[gx], param_wimmer['gleakE'], gleakEs)
     # paramsen['gXE'] = 2.7*nS   # scaled: 2.527, lower_bound: 2.17. prev 2.4602 --> 550 pA
     # paramsen['gIE'] = 25*nS       # wimmer: 12.6491*nS, scaled:18.7
+    paramsen['gEI'] = 2*nS     # wimmer: 1.5179*nS
 
     return paramsen
 
@@ -174,8 +175,8 @@ def get_stim_params(task_info):
     # adjust external current
     if task_info['sim']['2c_model']:
         paramsen = get_2c_params(task_info)
-        # I0 = 150*pA
-        I0 = adjust_variable(I0, paramsen['CmE'], paramsen['Cms'])
+        I0 = 175*pA
+        # I0 = adjust_variable(I0, paramsen['CmE'], paramsen['Cms'])
         I0_wimmer = I0              # scales variance of OU too!
 
     paramstim = {'c': c, 'I0': I0, 'I0_wimmer': I0_wimmer, 'mu1': mu1, 'mu2': mu2,  'tau_stim': tau_stim,
@@ -188,7 +189,8 @@ def get_fffb_params(task_info):
     """Parameters for creating feedforward and feedback synapses for the hierachical network."""
     eps = 0.2                   # connection probability
     d = 1*ms                    # transmission delays of E synapses
-    w_ff = 0.0036               # weight of ff synapses, 0.09 nS when scaled by gleakE of dec_circuit
+    # w_ff = 0.0036               # weight of ff synapses, 0.09 nS when scaled by gleakE of dec_circuit
+    w_ff = 0.003
     w_fb = 0.004                # weight of fb synapses, 0.0668 nS when scaled by gleakE of sen_circuit_wimmer
     b_fb = task_info['bfb']     # feedback strength, between 0 and 6
 

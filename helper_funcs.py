@@ -210,7 +210,7 @@ def plot_psychometric(stimuli, winner_pops, task_dir, fig_name):
     save_figure(task_dir, fig, fig_name)
 
 
-def plot_fig1(task_info, monitors, task_dir):
+def plot_fig1(task_info, monitors, task_dir, save_vars=False):
     sns.set(context=cntxt, style='darkgrid')
     settle_time = unitless(task_info['sim']['settle_time'], second, as_int=False)
     runtime = unitless(task_info['sim']['runtime'], second, as_int=False)
@@ -241,12 +241,16 @@ def plot_fig1(task_info, monitors, task_dir):
     fig1.add_axes(axs[2])
     pos = axs[2].get_position()
     axs[2].set_position([pos.x0, pos.y0 + .02, pos.width, pos.height])
-    axs[2].plot(rateDI.t, rateDI.smooth_rate(window='flat', width=smooth_win), color='C4', lw=1, label='inh')
-    axs[2].plot(rateDE1.t, rateDE1.smooth_rate(window='flat', width=smooth_win), color='C3', lw=1.5, label='E1')
-    axs[2].plot(rateDE2.t, rateDE2.smooth_rate(window='flat', width=smooth_win), color='C0', lw=1.5, label='E2')
+    rate_t = np_array(rateDI.t[:])
+    rate_DI = np_array(rateDI.smooth_rate(window='flat', width=smooth_win))
+    rate_DE1 = np_array(rateDE1.smooth_rate(window='flat', width=smooth_win))
+    rate_DE2 = np_array(rateDE2.smooth_rate(window='flat', width=smooth_win))
+    axs[2].plot(rate_t, rate_DI, color='C4', lw=1, label='inh')
+    axs[2].plot(rate_t, rate_DE1, color='C3', lw=1.5, label='E1')
+    axs[2].plot(rate_t, rate_DE2, color='C0', lw=1.5, label='E2')
     plt.ylabel(r"$Rate$ (sp/s)")
-    plt.ylim(0, 50)
-    plt.yticks(np.arange(0, 55, 20))
+    plt.ylim(0, 45)
+    plt.yticks(np.arange(0, 50, 15))
     #plt.legend(loc='upper left', fontsize='x-small')
 
     fig1.add_axes(axs[3])
@@ -267,24 +271,38 @@ def plot_fig1(task_info, monitors, task_dir):
     fig1.add_axes(axs[5])
     pos = axs[5].get_position()
     axs[5].set_position([pos.x0, pos.y0 + .02, pos.width, pos.height])
-    axs[5].plot(rateSI.t, rateSI.smooth_rate(window='flat', width=smooth_win), color='C4', lw=1, label='inh')
-    axs[5].plot(rateSE1.t, rateSE1.smooth_rate(window='flat', width=smooth_win), color='C3', lw=1.5, label='E1')
-    axs[5].plot(rateSE2.t, rateSE2.smooth_rate(window='flat', width=smooth_win), color='C0', lw=1.5, label='E2')
+    rate_SI = np_array(rateSI.smooth_rate(window='flat', width=smooth_win))
+    rate_SE1 = np_array(rateSE1.smooth_rate(window='flat', width=smooth_win))
+    rate_SE2 = np_array(rateSE2.smooth_rate(window='flat', width=smooth_win))
+    axs[5].plot(rate_t, rate_SI, color='C4', lw=1, label='inh')
+    axs[5].plot(rate_t, rate_SE1, color='C3', lw=1.5, label='E1')
+    axs[5].plot(rate_t, rate_SE2, color='C0', lw=1.5, label='E2')
     plt.ylabel(r"$Rate$ (sp/s)")
-    plt.ylim(0, 30)
-    plt.yticks(np.arange(0, 30, 10))
+    plt.ylim(0, 20)
+    plt.yticks(np.arange(0, 20, 5))
     plt.legend(loc='upper left', fontsize='xx-small')
 
     fig1.add_axes(axs[6])
     plt.title('Stimulus')
-    plt.plot(stim_time, stim1.mean(axis=0)*1e12, color='C3', lw=1.5)   # stim1.t, axis=0
-    plt.plot(stim_time, stim2.mean(axis=0)*1e12, color='C0', lw=1.5)   # np.arange(0, 3.5, 1e-3), axis=1
+    stim1 = np_array(stim1.mean(axis=0)) * 1e12
+    stim2 = np_array(stim2.mean(axis=0)) * 1e12
+    plt.plot(stim_time, stim1, color='C3', lw=1.5)   # stim1.t, axis=0
+    plt.plot(stim_time, stim2, color='C0', lw=1.5)   # np.arange(0, 3.5, 1e-3), axis=1
     plt.xlabel(r"$Time$ (s)")
     plt.ylabel(r'$I_{soma}$ (pA)')
     for i in range(6):
         axs[i].set_xlabel('')
 
     save_figure(task_dir, fig1, '/figure1.png', tight=False)
+
+    # save variables in dict
+    if save_vars:
+        sim_state = {'spksi_dec': np_array(spksDE.i[:]), 'spkst_dec': np_array(spksDE.t[:]),
+                     'spksi_sen': np_array(spksSE.i[:]), 'spkst_sen': np_array(spksSE.t[:]),
+                     'rate_t': rate_t, 'rate_DE1': rate_DE1, 'rate_DE2': rate_DE2, 'rate_DI': rate_DI,
+                     'rate_SE1': rate_SE1, 'rate_SE2': rate_SE2, 'rate_SI': rate_SI,
+                     'stim1': stim1, 'stim2': stim2, 'stim_time': stim_time}
+        return sim_state
 
 
 def plot_fig2(task_info, events, bursts, spikes, stim_diff, stim_time, rates_dec, winner_pop, task_dir, fig_name='/figure2.png'):
@@ -360,7 +378,8 @@ def plot_fig2(task_info, events, bursts, spikes, stim_diff, stim_time, rates_dec
     save_figure(task_dir, fig2, fig_name, tight=True)
 
 
-def plot_isis(task_info, isis, ieis, ibis, cvs, spks_per_burst, task_dir, bins=np.arange(0, 760, 10), extend_burst=2):
+def plot_isis(task_info, isis, ieis, ibis, cvs, spks_per_burst, task_dir, fig_name='/figure5.png',
+              bins=np.arange(0, 760, 10), extend_burst=2):
     sns.set(context=cntxt, style='darkgrid')
     valid_burst = task_info['sim']['valid_burst']*1e3
     max_isi = int(bins[-1])
@@ -396,7 +415,7 @@ def plot_isis(task_info, isis, ieis, ibis, cvs, spks_per_burst, task_dir, bins=n
 
     axs[1, 2].set_axis_off()
 
-    save_figure(task_dir, fig5, '/figure5.png')
+    save_figure(task_dir, fig5, fig_name)
 
 
 def plot_fig3(task_info, dend_mon, events, bursts, spikes, pop_dend, task_dir):

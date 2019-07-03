@@ -192,11 +192,14 @@ def mk_sen_circuit(task_info):
 
     senI = NeuronGroup(N_I, model=nm.eqs_wimmer_inh, method=num_method, threshold='V>=Vt', reset='V=Vr',
                        refractory='tau_refI', namespace=paramsen, name='senI')
+
+    # external population
     extS = PoissonGroup(N_X, rates='nu_ext', namespace=paramsen)
 
-    # variables to return
+    # synapses
     synapses = mk_sen_synapses(task_info, senE, senI, extS, paramsen)
 
+    # variables to return
     if two_comp:
         groups = {'SE': senE, 'dend': dend, 'SI': senI, 'SX': extS}
         subgroups = {'SE1': senE1, 'SE2': senE2, 'dend1': dend1, 'dend2': dend2}

@@ -4,7 +4,7 @@ from helper_funcs import plot_psychometric
 import pickle
 
 load_path = '/Users/PSR/Documents/WS19/MasterThesis/Experiments/run_hierarchical'
-test_expers = ['2019-06-14-19h09m14s_naud_-50dend_adaptation']
+test_expers = ['2019-06-28-19h07m59s-naud_tuned_psycho100']
 plt_show = True
 fig_extension = '.png'
 
