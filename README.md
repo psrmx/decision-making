@@ -1,4 +1,4 @@
-# decisionmaking_snep
+# decision_making
 
 Comparison of two models of sensory neurons in a hierarchical network for perceptual decision making. 
 
