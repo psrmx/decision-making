@@ -1,0 +1,13 @@
+# SNEP gitignore
+*~
+*.py[cod]
+*.so
+.svn
+.idea
+*.nbc
+*.nbi
+.fuse_hidden*
+inner_impl.h
+inner_impl.c
+
+
